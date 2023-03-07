@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+
+package pb;
+option go_package="github.com/tyromancer/cdfs/pb";
+
+// Master
+service Master {
+	// Client <-> Master
+
+	rpc GetLocation(GetLocationReq) returns (GetLocationResp) {} 
+	// TODO: chunkIndex or offset?
+	// chunkIndex : client has to maintain -> multiple client problem?
+	// offset: Master has to main chunk usage.
+
+	//rpc Write(fileName, chunkIndex) returns (WriteResp) {}
+	
+	rpc AppendFile(AppendFileReq) returns (AppendFileResp) {} 
+	rpc Delete(DeleteReq) returns (DeleteStatus) {} 
+	rpc Create(CreateReq) returns (CreateResp) {} // filename only or with content?
+
+	// chunk server <-> Master
+	rpc HeartBeat(HeartBeatPayload) returns (HeartBeatResp) {}
+	
+}
+
+message GetLocationReq {
+    string fileName = 1;
+    uint32 chunkIndex = 2;
+}
+
+message AppendFileReq {
+    string fileName = 1;
+    uint32 fileSize = 2;
+}
+
+message DeleteReq {
+    string fileName = 1;
+}
+
+message CreateReq {
+    string fileName = 1;
+}
+
+message CreateResp {
+    Status status = 1;
+}
+
+message HeartBeatPayload {
+
+}
+
+message Status {
+	int32 statusCode = 1;
+	string errorMessage = 2;
+}
+
+message DeleteStatus {
+	Status status = 1;
+}
+
+message GetLocationResp{
+	Status status = 1;
+	string primaryIP = 2;
+	uint32 chunkID = 3;
+}
+
+message AppendFileResp{
+	Status status = 1;
+	repeated string primaryIP = 2;
+	repeated uint32 chunkID = 3;
+}
+
+message HeartBeat{
+	repeated uint32 chunkID = 1;
+}
+
+message HeartBeatResp{
+	Status status = 1;
+}
+
+service ChunkServer {
+	// Client -> ChunkServer
+	rpc Read(ReadReq) returns (ReadResp) {}
+	rpc AppendData(AppendDataReq) returns (AppendDataResp) {}
+	// ChunkServer -> ChunkServer
+	rpc Replicate(ReplicateReq) returns (ReplicateResp) {}
+}
+
+message ReadReq {
+	uint32 seqNum = 1;
+	uint32 chunkID = 2;
+}
+
+message ReadResp {
+	uint32 seqNum = 1;
+	bytes fileData = 2;
+}
+
+message AppendDataReq {
+	uint32 seqNum = 1;
+	uint32 chunkID = 2;
+	bytes fileData = 3;
+}
+
+message AppendDataResp {
+	Status status = 1;
+}
+
+message ReplicateReq {
+	uint32 seqNum = 1;
+	string clientIP = 2;
+	uint32 chunkID = 3;
+	bytes fileData = 4;
+	uint32 uuid = 5;
+}
+
+message ReplicateResp {
+	Status status = 1;
+	uint32 uuid = 2;
+}
