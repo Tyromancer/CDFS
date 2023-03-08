@@ -2,17 +2,21 @@ package chunkserver
 
 import (
 	"context"
-	"log"
-
 	pb "github.com/tyromancer/cdfs/pb"
+	"log"
 )
 
 type ChunkServer struct {
 	pb.UnimplementedChunkServerServer
+
+	// a mapping from ChunkID to ChunkMetaData
+	Chunks map[ChunkHandle]ChunkMetaData
 }
 
 func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadResp, error) {
-	log.Printf("Received read request: %s\n", readReq)
+	clientToken := readReq.Token
+
+	log.Printf("Received read request from: %s\n", clientToken)
 	return &pb.ReadResp{SeqNum: readReq.SeqNum, FileData: []byte("Hello world")}, nil
 }
 

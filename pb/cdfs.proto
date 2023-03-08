@@ -21,9 +21,19 @@ service Master {
 
 	// chunk server <-> Master
 	rpc HeartBeat(HeartBeatPayload) returns (HeartBeatResp) {}
-	
+
+	rpc GetToken(GetTokenReq) returns (GetTokenResp) {}
 }
 
+message GetTokenReq {
+}
+
+message GetTokenResp {
+	string token = 1;
+	Status status = 2;
+}
+
+// TODO: which of these msgs need a token?
 message GetLocationReq {
     string fileName = 1;
     uint32 chunkIndex = 2;
@@ -62,17 +72,23 @@ message DeleteStatus {
 message GetLocationResp{
 	Status status = 1;
 	string primaryIP = 2;
-	uint32 chunkID = 3;
+//	uint32 chunkID = 3;
+	string chunkHandle = 3;
+
 }
 
 message AppendFileResp{
 	Status status = 1;
 	repeated string primaryIP = 2;
-	repeated uint32 chunkID = 3;
+//	repeated uint32 chunkID = 3;
+	repeated string chunkHandle = 3;
+
 }
 
 message HeartBeat{
-	repeated uint32 chunkID = 1;
+//	repeated uint32 chunkID = 1;
+		repeated string chunkHandle = 1;
+
 }
 
 message HeartBeatResp{
@@ -89,7 +105,10 @@ service ChunkServer {
 
 message ReadReq {
 	uint32 seqNum = 1;
-	uint32 chunkID = 2;
+//	was uint32 chunkID = 2;
+	string chunkHandle = 2;
+
+	string token = 3;
 }
 
 message ReadResp {
@@ -99,8 +118,11 @@ message ReadResp {
 
 message AppendDataReq {
 	uint32 seqNum = 1;
-	uint32 chunkID = 2;
+	// was	uint32 chunkID = 2;
+	string chunkHandle = 2;
+
 	bytes fileData = 3;
+	string token = 4;
 }
 
 message AppendDataResp {
@@ -109,8 +131,11 @@ message AppendDataResp {
 
 message ReplicateReq {
 	uint32 seqNum = 1;
-	string clientIP = 2;
-	uint32 chunkID = 3;
+
+	// was clientIP
+	string clientToken = 2;
+	//	was uint32 chunkID = 3;
+	string chunkHandle = 3;
 	bytes fileData = 4;
 	uint32 uuid = 5;
 }
