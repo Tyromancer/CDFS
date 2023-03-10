@@ -96,11 +96,23 @@ message HeartBeatResp{
 }
 
 service ChunkServer {
+	// Master -> ChunkServer
+	rpc CreateChunk(CreateChunkReq) returns (CreateChunkResp) {}
+
 	// Client -> ChunkServer
 	rpc Read(ReadReq) returns (ReadResp) {}
 	rpc AppendData(AppendDataReq) returns (AppendDataResp) {}
 	// ChunkServer -> ChunkServer
 	rpc Replicate(ReplicateReq) returns (ReplicateResp) {}
+}
+
+message CreateChunkReq {
+	string chunkHandle = 1;
+	uint32 role = 2;
+	repeated string peers = 3;
+}
+message CreateChunkResp {
+	Status status = 1;
 }
 
 message ReadReq {

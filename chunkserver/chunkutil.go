@@ -3,6 +3,7 @@ package chunkserver
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 const (
@@ -11,16 +12,23 @@ const (
 )
 
 const (
-	ERROR_NOT_PRIMARY int32 = iota
+	OK int32 = iota
+	ERROR_NOT_PRIMARY
 	ERROR_READ_FAILED
+	ERROR_CHUNK_ALREADY_EXISTS
+	ERROR_CREATE_CHUNK_FAILED
 )
 
 func ErrorCodeToString(e int32) string {
 	switch e {
+	case OK:
+		return "OK"
 	case ERROR_NOT_PRIMARY:
 		return "Error: this chunk server is not primary for this chunk"
 	case ERROR_READ_FAILED:
 		return "Error: failed to open local file for this chunk"
+	case ERROR_CHUNK_ALREADY_EXISTS:
+		return "Error: chunk already exists"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -35,9 +43,21 @@ type ChunkMetaData struct {
 
 	// IP address of primary chunk server for this chunk
 	PrimaryChunkServer string
+	PeerAddress        []string
 }
 
-func LoadChunk(location string) ([]byte, error) {
-	fileContent, err := os.ReadFile(location)
+func LoadChunk(path string) ([]byte, error) {
+	fileContent, err := os.ReadFile(path)
 	return fileContent, err
+}
+
+func CreateFile(path string) error {
+
+	err := os.MkdirAll(filepath.Dir(path), 0700)
+	if err != nil {
+		return err
+	}
+
+	_, err = os.Create(path)
+	return err
 }

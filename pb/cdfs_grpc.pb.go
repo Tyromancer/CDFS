@@ -290,6 +290,8 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ChunkServerClient interface {
+	// Master -> ChunkServer
+	CreateChunk(ctx context.Context, in *CreateChunkReq, opts ...grpc.CallOption) (*CreateChunkResp, error)
 	// Client -> ChunkServer
 	Read(ctx context.Context, in *ReadReq, opts ...grpc.CallOption) (*ReadResp, error)
 	AppendData(ctx context.Context, in *AppendDataReq, opts ...grpc.CallOption) (*AppendDataResp, error)
@@ -303,6 +305,15 @@ type chunkServerClient struct {
 
 func NewChunkServerClient(cc grpc.ClientConnInterface) ChunkServerClient {
 	return &chunkServerClient{cc}
+}
+
+func (c *chunkServerClient) CreateChunk(ctx context.Context, in *CreateChunkReq, opts ...grpc.CallOption) (*CreateChunkResp, error) {
+	out := new(CreateChunkResp)
+	err := c.cc.Invoke(ctx, "/pb.ChunkServer/CreateChunk", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *chunkServerClient) Read(ctx context.Context, in *ReadReq, opts ...grpc.CallOption) (*ReadResp, error) {
@@ -336,6 +347,8 @@ func (c *chunkServerClient) Replicate(ctx context.Context, in *ReplicateReq, opt
 // All implementations must embed UnimplementedChunkServerServer
 // for forward compatibility
 type ChunkServerServer interface {
+	// Master -> ChunkServer
+	CreateChunk(context.Context, *CreateChunkReq) (*CreateChunkResp, error)
 	// Client -> ChunkServer
 	Read(context.Context, *ReadReq) (*ReadResp, error)
 	AppendData(context.Context, *AppendDataReq) (*AppendDataResp, error)
@@ -348,6 +361,9 @@ type ChunkServerServer interface {
 type UnimplementedChunkServerServer struct {
 }
 
+func (UnimplementedChunkServerServer) CreateChunk(context.Context, *CreateChunkReq) (*CreateChunkResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateChunk not implemented")
+}
 func (UnimplementedChunkServerServer) Read(context.Context, *ReadReq) (*ReadResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Read not implemented")
 }
@@ -368,6 +384,24 @@ type UnsafeChunkServerServer interface {
 
 func RegisterChunkServerServer(s grpc.ServiceRegistrar, srv ChunkServerServer) {
 	s.RegisterService(&ChunkServer_ServiceDesc, srv)
+}
+
+func _ChunkServer_CreateChunk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateChunkReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).CreateChunk(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.ChunkServer/CreateChunk",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).CreateChunk(ctx, req.(*CreateChunkReq))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ChunkServer_Read_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -431,6 +465,10 @@ var ChunkServer_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "pb.ChunkServer",
 	HandlerType: (*ChunkServerServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateChunk",
+			Handler:    _ChunkServer_CreateChunk_Handler,
+		},
 		{
 			MethodName: "Read",
 			Handler:    _ChunkServer_Read_Handler,
