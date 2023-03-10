@@ -4,7 +4,7 @@ import (
 	"log"
 	"net"
 
-	cs "github.com/tyromancer/cdfs/chunkServer"
+	cs "github.com/tyromancer/cdfs/chunkserver"
 	pb "github.com/tyromancer/cdfs/pb"
 	"google.golang.org/grpc"
 )

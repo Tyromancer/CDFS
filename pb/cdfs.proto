@@ -114,6 +114,7 @@ message ReadReq {
 message ReadResp {
 	uint32 seqNum = 1;
 	bytes fileData = 2;
+	Status status = 3;
 }
 
 message AppendDataReq {
