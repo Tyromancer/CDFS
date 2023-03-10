@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/tyromancer/cdfs/pb"
 )
 
 const (
@@ -17,6 +19,8 @@ const (
 	ERROR_READ_FAILED
 	ERROR_CHUNK_ALREADY_EXISTS
 	ERROR_CREATE_CHUNK_FAILED
+	ERROR_APPEND_FAILED
+	ERROR_APPEND_NOT_EXISTS
 )
 
 func ErrorCodeToString(e int32) string {
@@ -29,6 +33,10 @@ func ErrorCodeToString(e int32) string {
 		return "Error: failed to open local file for this chunk"
 	case ERROR_CHUNK_ALREADY_EXISTS:
 		return "Error: chunk already exists"
+	case ERROR_APPEND_FAILED:
+		return "Error: append to chunk failed"
+	case ERROR_APPEND_NOT_EXISTS:
+		return "Error: append to chunk not exisis"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -44,6 +52,20 @@ type ChunkMetaData struct {
 	// IP address of primary chunk server for this chunk
 	PrimaryChunkServer string
 	PeerAddress        []string
+
+	// Already used size in bytes
+	Used uint
+}
+
+type RespMetaData struct {
+	// client last seq
+	LastSeq uint32
+
+	// last response to client append request
+	AppendResp *pb.AppendDataResp
+
+	// error
+	Err error
 }
 
 func LoadChunk(path string) ([]byte, error) {
@@ -59,5 +81,17 @@ func CreateFile(path string) error {
 	}
 
 	_, err = os.Create(path)
+	return err
+}
+
+func WriteFile(path string, content []byte) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	_, err = f.Write(content)
 	return err
 }

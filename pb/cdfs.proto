@@ -140,11 +140,11 @@ message AppendDataReq {
 
 message AppendDataResp {
 	Status status = 1;
+	
 }
 
 message ReplicateReq {
 	uint32 seqNum = 1;
-
 	// was clientIP
 	string clientToken = 2;
 	//	was uint32 chunkID = 3;

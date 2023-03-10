@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	pb "github.com/tyromancer/cdfs/pb"
 	"log"
+
+	pb "github.com/tyromancer/cdfs/pb"
 )
 
 type ChunkServer struct {
@@ -13,6 +14,9 @@ type ChunkServer struct {
 
 	// a mapping from ChunkHandle(string) to ChunkMetaData
 	Chunks map[string]ChunkMetaData
+
+	// a mapping from client token to client last sequence number
+	ClientLastResp map[string]RespMetaData
 
 	// globally unique server name
 	ServerName string
@@ -48,7 +52,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	}
 
 	// file create success, record metadata and return
-	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: Primary, PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers}
+	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: Primary, PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0}
 	s.Chunks[chunkHandle] = metadata
 
 	// TODO: send replicate request to peers
@@ -85,7 +89,53 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 }
 
 func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataReq) (*pb.AppendDataResp, error) {
-	panic("ChunkServer.AppendData not implemented")
+	token := appendReq.Token
+	seqNum := appendReq.SeqNum
+	respMeta, ok := s.ClientLastResp[token]
+	if ok {
+		if seqNum == respMeta.LastSeq {
+			return respMeta.AppendResp, respMeta.Err
+		}
+		if seqNum < respMeta.LastSeq {
+			// should not happend
+			errorCode := ERROR_APPEND_FAILED
+			errorMsg := ErrorCodeToString(errorCode)
+			res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
+			return res, errors.New(errorMsg)
+		}
+	}
+
+	chunkHandle := appendReq.ChunkHandle
+	fileData := appendReq.FileData
+
+	meta, ok := s.Chunks[chunkHandle]
+	if ok {
+		path := meta.ChunkLocation
+		err := WriteFile(path, fileData)
+		if err != nil {
+			errorCode := ERROR_APPEND_FAILED
+			errorMsg := ErrorCodeToString(errorCode)
+			res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
+			newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: err}
+			s.ClientLastResp[token] = newResp
+			return res, err
+		}
+		meta.Used += uint(len(fileData))
+
+		//TODO: Notify Master the used length of chunk changed.
+
+		res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: OK, ErrorMessage: ErrorCodeToString(OK)}}
+		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: nil}
+		s.ClientLastResp[token] = newResp
+		return res, nil
+	} else {
+		errorCode := ERROR_APPEND_NOT_EXISTS
+		errorMsg := ErrorCodeToString(errorCode)
+		res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
+		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: errors.New(errorMsg)}
+		s.ClientLastResp[token] = newResp
+		return res, errors.New(errorMsg)
+	}
 }
 
 func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateReq) (*pb.ReplicateResp, error) {
