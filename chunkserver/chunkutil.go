@@ -43,14 +43,18 @@ type ChunkMetaData struct {
 
 	// IP address of primary chunk server for this chunk
 	PrimaryChunkServer string
-	PeerAddress        []string
+
+	// Address of non-primary chunk servers that holds replicas of this chunk
+	PeerAddress []string
 }
 
+// LoadChunk reads and returns the chunk file as a whole
 func LoadChunk(path string) ([]byte, error) {
 	fileContent, err := os.ReadFile(path)
 	return fileContent, err
 }
 
+// CreateFile attempts to create a file that represents a chunk in the chunk server's local file system
 func CreateFile(path string) error {
 
 	err := os.MkdirAll(filepath.Dir(path), 0700)
