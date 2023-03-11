@@ -2,10 +2,9 @@ package chunkserver
 
 import (
 	"fmt"
+	"github.com/tyromancer/cdfs/pb"
 	"os"
 	"path/filepath"
-
-	"github.com/tyromancer/cdfs/pb"
 )
 
 const (
@@ -20,6 +19,8 @@ const (
 	ERROR_CHUNK_ALREADY_EXISTS
 	ERROR_CREATE_CHUNK_FAILED
 	ERROR_APPEND_FAILED
+
+	// ERROR_APPEND_NOT_EXISTS represents the chunk to be appended does not exist on local filesystem
 	ERROR_APPEND_NOT_EXISTS
 )
 
@@ -94,4 +95,17 @@ func WriteFile(path string, content []byte) error {
 
 	_, err = f.Write(content)
 	return err
+}
+
+// NewReadResp returns a pointer to pb.ReadResp that represents the result of a read with pb.Status
+func NewReadResp(seqNum uint32, fileData []byte, errorCode int32) *pb.ReadResp {
+	return &pb.ReadResp{SeqNum: seqNum, FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
+
+func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
+	return &pb.CreateChunkResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
+
+func NewAppendDataResp(errorCode int32) *pb.AppendDataResp {
+	return &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
 }

@@ -22,11 +22,6 @@ type ChunkServer struct {
 	ServerName string
 }
 
-// buildInvalidReadResp builds a pb.ReadResp that represents an invalid read
-func buildInvalidReadResp(seqNum uint32, errorCode int32, errorMsg string) *pb.ReadResp {
-	return &pb.ReadResp{SeqNum: seqNum, FileData: []byte{}, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
-}
-
 // CreateChunk creates file on local filesystem that represents a chunk per Master Server's request
 func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.CreateChunkReq) (*pb.CreateChunkResp, error) {
 
@@ -35,19 +30,15 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	// check if chunk already exists
 	_, ok := s.Chunks[chunkHandle]
 	if ok {
-		errorCode := ERROR_CHUNK_ALREADY_EXISTS
-		errorMsg := ErrorCodeToString(errorCode)
-		res := &pb.CreateChunkResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
-		return res, errors.New(errorMsg)
+		res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
+		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
 	// create file on disk
 	chunkLocation := fmt.Sprintf("/cdfs/%s/%s", s.ServerName, chunkHandle)
 	err := CreateFile(chunkLocation)
 	if err != nil {
-		errorCode := ERROR_CREATE_CHUNK_FAILED
-		errorMsg := ErrorCodeToString(errorCode)
-		res := &pb.CreateChunkResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
+		res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
 		return res, err
 	}
 
@@ -57,7 +48,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 
 	// TODO: send replicate request to peers
 
-	return &pb.CreateChunkResp{Status: &pb.Status{StatusCode: OK, ErrorMessage: ErrorCodeToString(OK)}}, nil
+	return NewCreateChunkResp(OK), nil
 }
 
 // Read handles read request from client
@@ -75,16 +66,15 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 		if err != nil {
 			log.Printf("Failed to read chunk at %s with error %v\n", chunkContent, err)
 			errorCode := ERROR_READ_FAILED
-			return buildInvalidReadResp(readReq.SeqNum, errorCode, ErrorCodeToString(errorCode)), err
+			return NewReadResp(readReq.SeqNum, nil, errorCode), err
 		}
 
 		// if the read was successful, return the chunk content with ok status
-		return &pb.ReadResp{SeqNum: readReq.SeqNum, FileData: chunkContent, Status: &pb.Status{StatusCode: 0, ErrorMessage: ""}}, nil
+		return NewReadResp(readReq.SeqNum, chunkContent, OK), nil
 	} else {
 		// this chunk server either is not primary or does not have the requested chunk
-		errorCode := ERROR_NOT_PRIMARY
-		errorMessage := ErrorCodeToString(errorCode)
-		return buildInvalidReadResp(readReq.SeqNum, errorCode, errorMessage), errors.New(errorMessage)
+		res := NewReadResp(readReq.SeqNum, nil, ERROR_NOT_PRIMARY)
+		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 }
 
@@ -97,11 +87,9 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 			return respMeta.AppendResp, respMeta.Err
 		}
 		if seqNum < respMeta.LastSeq {
-			// should not happend
-			errorCode := ERROR_APPEND_FAILED
-			errorMsg := ErrorCodeToString(errorCode)
-			res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
-			return res, errors.New(errorMsg)
+			// should not happen
+			res := NewAppendDataResp(ERROR_APPEND_FAILED)
+			return res, errors.New(res.GetStatus().ErrorMessage)
 		}
 	}
 
@@ -113,9 +101,7 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 		path := meta.ChunkLocation
 		err := WriteFile(path, fileData)
 		if err != nil {
-			errorCode := ERROR_APPEND_FAILED
-			errorMsg := ErrorCodeToString(errorCode)
-			res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
+			res := NewAppendDataResp(ERROR_APPEND_FAILED)
 			newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: err}
 			s.ClientLastResp[token] = newResp
 			return res, err
@@ -124,17 +110,15 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 
 		//TODO: Notify Master the used length of chunk changed.
 
-		res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: OK, ErrorMessage: ErrorCodeToString(OK)}}
+		res := NewAppendDataResp(OK)
 		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: nil}
 		s.ClientLastResp[token] = newResp
 		return res, nil
 	} else {
-		errorCode := ERROR_APPEND_NOT_EXISTS
-		errorMsg := ErrorCodeToString(errorCode)
-		res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: errorMsg}}
-		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: errors.New(errorMsg)}
+		res := NewAppendDataResp(ERROR_APPEND_NOT_EXISTS)
+		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
 		s.ClientLastResp[token] = newResp
-		return res, errors.New(errorMsg)
+		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 }
 
