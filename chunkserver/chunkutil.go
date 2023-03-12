@@ -82,7 +82,8 @@ func CreateFile(path string) error {
 		return err
 	}
 
-	_, err = os.Create(path)
+	f, err := os.Create(path)
+	defer f.Close()
 	return err
 }
 
