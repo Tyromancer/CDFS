@@ -1,6 +1,7 @@
 package chunkserver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"github.com/tyromancer/cdfs/pb"
@@ -47,6 +48,21 @@ func checkFileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+func appendChunkWorkload(t *testing.T, server *ChunkServer, chunkHandle string, appendContent []byte) error {
+	req := pb.AppendDataReq{
+		SeqNum:      1,
+		ChunkHandle: chunkHandle,
+		FileData:    appendContent,
+		Token:       "appendChunk#1",
+	}
+	got, err := server.AppendData(context.Background(), &req)
+	if got.GetStatus().GetStatusCode() != OK || err != nil {
+		t.Logf("got status code %d, expected %d, message is %s", got.GetStatus().GetStatusCode(), OK, got.GetStatus().GetErrorMessage())
+		return errors.New(got.GetStatus().GetErrorMessage())
+	}
+	return nil
 }
 
 func TestClientReadInvalidRead(t *testing.T) {
@@ -100,7 +116,27 @@ func TestCreateDuplicateChunk(t *testing.T) {
 }
 
 func TestValidAppend(t *testing.T) {
+	t.Log("Running TestValidAppend...")
+	chunkHandle := "chunk#1"
+	s := newChunkServer(t, "cs1")
+	chunkFilePath1, err := createChunkWorkload(t, &s, chunkHandle, nil)
+	t.Log("chunk file path is ", chunkFilePath1)
+	if err != nil {
+		t.Errorf("got error %v", err)
+	}
+	appendContent := []byte("appendDataChunkTest")
+	err = appendChunkWorkload(t, &s, chunkHandle, appendContent)
+	if err != nil {
+		t.Errorf("TestValidAppend failed, got error %v", err)
+	}
+	result, err := os.ReadFile(chunkFilePath1)
+	if err != nil {
+		t.Errorf("TestValidAppend failed, got error %v", err)
+	}
 
+	if !bytes.Equal(result, appendContent) {
+		t.Errorf("TestValidAppend failed, the results do not match")
+	}
 }
 
 func TestAppendToNonExistingChunk(t *testing.T) {
