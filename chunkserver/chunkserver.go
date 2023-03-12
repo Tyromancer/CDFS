@@ -3,8 +3,8 @@ package chunkserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
+	"path"
 
 	pb "github.com/tyromancer/cdfs/pb"
 )
@@ -20,6 +20,9 @@ type ChunkServer struct {
 
 	// globally unique server name
 	ServerName string
+
+	// base directory to store chunk files
+	BasePath string
 }
 
 // CreateChunk creates file on local filesystem that represents a chunk per Master Server's request
@@ -35,7 +38,8 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	}
 
 	// create file on disk
-	chunkLocation := fmt.Sprintf("/cdfs/%s/%s", s.ServerName, chunkHandle)
+	//chunkLocation := fmt.Sprintf("/cdfs/%s/%s", s.ServerName, chunkHandle)
+	chunkLocation := path.Join(s.BasePath, chunkHandle)
 	err := CreateFile(chunkLocation)
 	if err != nil {
 		res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)

@@ -9,16 +9,16 @@ import (
 	"testing"
 )
 
-func newChunkServer(name string) ChunkServer {
-	return ChunkServer{Chunks: make(map[string]ChunkMetaData), ClientLastResp: make(map[string]RespMetaData), ServerName: name}
+func newChunkServer(t *testing.T, name string) ChunkServer {
+	return ChunkServer{Chunks: make(map[string]ChunkMetaData), ClientLastResp: make(map[string]RespMetaData), ServerName: name, BasePath: t.TempDir()}
 }
 
 func setChunkMetaData(cs *ChunkServer, chunkHandle string, chunkLocation string, role uint, primary string) {
 	cs.Chunks[chunkHandle] = ChunkMetaData{ChunkLocation: chunkLocation, Role: role, PrimaryChunkServer: primary}
 }
 
-func makeFilePath(name string, chunkHandle string) string {
-	return path.Join("/cdfs", name, chunkHandle)
+func makeFilePath(server *ChunkServer, chunkHandle string) string {
+	return path.Join(server.BasePath, chunkHandle)
 }
 
 func createChunkWorkload(t *testing.T, server *ChunkServer, chunkHandle string, peers []string) (string, error) {
@@ -29,18 +29,11 @@ func createChunkWorkload(t *testing.T, server *ChunkServer, chunkHandle string, 
 	}
 
 	got, err := server.CreateChunk(context.Background(), &req)
-	chunkFilePath := makeFilePath(server.ServerName, chunkHandle)
+	chunkFilePath := makeFilePath(server, chunkHandle)
 	if got.GetStatus().GetStatusCode() != OK || err != nil {
 		t.Logf("got status code %d, expected %d, message is %s", got.GetStatus().GetStatusCode(), OK, got.GetStatus().GetErrorMessage())
 		return chunkFilePath, errors.New(got.GetStatus().GetErrorMessage())
 	}
-
-	t.Cleanup(func() {
-		err := os.Remove(chunkFilePath)
-		if err != nil {
-			t.Log("failed to remove files ", err)
-		}
-	})
 
 	return chunkFilePath, nil
 }
@@ -59,7 +52,7 @@ func checkFileExists(path string) bool {
 func TestClientReadInvalidRead(t *testing.T) {
 	t.Log("Running TestClientReadInvalidRead...")
 
-	s := newChunkServer("cs1")
+	s := newChunkServer(t, "cs1")
 	setChunkMetaData(&s, "chunk#1", "/cdfs/cs1/chunk1", Secondary, "cs2")
 
 	req1 := pb.ReadReq{SeqNum: 0, ChunkHandle: "chunk#2", Token: "client1"}
@@ -73,7 +66,7 @@ func TestClientReadInvalidRead(t *testing.T) {
 // TestCreateValidChunk tests the ChunkServer behavior on creating a valid chunk via the Create RPC
 func TestCreateValidChunk(t *testing.T) {
 	t.Log("Running TestCreateValidChunk...")
-	s := newChunkServer("cs1")
+	s := newChunkServer(t, "cs1")
 	chunkFilePath, err := createChunkWorkload(t, &s, "chunk#1", nil)
 	if err != nil {
 		t.Errorf("got error %v", err)
@@ -88,7 +81,7 @@ func TestCreateValidChunk(t *testing.T) {
 func TestCreateDuplicateChunk(t *testing.T) {
 	t.Log("Running TestCreateDuplicateChunk...")
 	chunkHandle := "chunk#1"
-	s := newChunkServer("cs1")
+	s := newChunkServer(t, "cs1")
 	chunkFilePath1, err := createChunkWorkload(t, &s, chunkHandle, nil)
 	t.Log("chunk file path is ", chunkFilePath1)
 	if err != nil {
