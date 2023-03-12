@@ -3,6 +3,7 @@ package chunkserver
 import (
 	"fmt"
 	"github.com/tyromancer/cdfs/pb"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -91,7 +92,12 @@ func WriteFile(path string, content []byte) error {
 		return err
 	}
 
-	defer f.Close()
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			log.Println("failed to close file: ", err)
+		}
+	}(f)
 
 	_, err = f.Write(content)
 	return err

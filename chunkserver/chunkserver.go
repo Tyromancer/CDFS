@@ -30,7 +30,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	// check if chunk already exists
 	_, ok := s.Chunks[chunkHandle]
 	if ok {
-		res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
+		res := NewCreateChunkResp(ERROR_CHUNK_ALREADY_EXISTS)
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
