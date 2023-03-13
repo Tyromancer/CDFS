@@ -86,6 +86,7 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	token := appendReq.Token
 	seqNum := appendReq.SeqNum
 	respMeta, ok := s.ClientLastResp[token]
+	//If client already connected with the server before
 	if ok {
 		if seqNum == respMeta.LastSeq {
 			return respMeta.AppendResp, respMeta.Err
@@ -100,6 +101,7 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	chunkHandle := appendReq.ChunkHandle
 	fileData := appendReq.FileData
 
+	//Check if the chunk exist in the chunk server
 	meta, ok := s.Chunks[chunkHandle]
 	if ok {
 		path := meta.ChunkLocation
@@ -110,8 +112,10 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 			s.ClientLastResp[token] = newResp
 			return res, err
 		}
+		//Update the new length in chunkMetaData
 		meta.Used += uint(len(fileData))
 
+		//TODO: ReplicateReq to peers, wait for ACKS
 		//TODO: Notify Master the used length of chunk changed.
 
 		res := NewAppendDataResp(OK)
