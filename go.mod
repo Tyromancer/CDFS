@@ -3,6 +3,7 @@ module github.com/tyromancer/cdfs
 go 1.19
 
 require (
+	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	golang.org/x/net v0.5.0 // indirect
 	golang.org/x/sys v0.4.0 // indirect
