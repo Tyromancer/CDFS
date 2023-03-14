@@ -12,9 +12,11 @@ const (
 	ERROR_FILE_NOT_EXISTS
 	ERROR_PRIMARY_NOT_EXISTS
 	ERROR_FILE_ALREADY_EXISTS
-	ERROR_NO_SERVER_AVAILABLE
+	ERROR_NO_SERVER_AVAILABLE	
+)
 
-	
+const (
+	ChunkSize = uint32(67108864)
 )
 
 func ErrorCodeToString(e int32) string {
@@ -79,4 +81,8 @@ func NewGetLocationResp(errorCode int32, primaryIP string, chunckHandle string) 
 
 func NewCreateResp(errorCode int32) *pb.CreateResp {
 	return &pb.CreateResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
+
+func NewAppendFileResp(errorCode int32, primaryIP []string, chunckHandle []string) *pb.AppendFileResp {
+	return &pb.AppendFileResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, PrimaryIP: primaryIP, ChunkHandle: chunckHandle}
 }
