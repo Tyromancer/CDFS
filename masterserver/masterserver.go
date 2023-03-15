@@ -3,6 +3,7 @@ package masterserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math"
 
@@ -27,7 +28,23 @@ type MasterServer struct {
 	BasePath string
 }
 
+// ChunkServer Register
+func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegisterReq) (*pb.CSRegisterResp, error) {
+	csHost := csRegisterReq.GetHost()
+	csPort := csRegisterReq.GetPort()
+	csName := fmt.Sprintf("%s:%d", csHost, csPort)
+	_, ok := s.ChunkServerLoad[csName]
+	// if the ChunkServer already registered
+	if ok {
+		res := NewCSRegisterResp((ERROR_CHUNKSERVER_ALREADY_EXISTS))
+		return res, errors.New(res.GetStatus().ErrorMessage)
+	}
+	// Register the ChunkServer
+	s.ChunkServerLoad[csName] = 0
 
+	return NewCSRegisterResp(OK), nil
+
+}
 
 // GetLocation return the IP of the Primary chunkserver and chunkID back to client
 func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLocationReq) (*pb.GetLocationResp, error) {
@@ -53,7 +70,6 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 	log.Printf("Find the primary chunk server given the FileName and ChunkIndex")
 	return NewGetLocationResp(OK, primaryIP, handleMeta.ChunkHandle), nil
 }
-
 
 // // client -> Master Create file given the FileName
 func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb.CreateResp, error) {
@@ -85,7 +101,7 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 	} else {
 		peers = []string{}
 	}
-	
+
 	// Send grpc Create to Primary Chunk Server
 	var conn *grpc.ClientConn
 	conn, err := grpc.Dial(primary, grpc.WithInsecure())
@@ -115,9 +131,8 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 	} else {
 		return NewCreateResp(res.GetStatus().StatusCode), errors.New(res.GetStatus().ErrorMessage)
 	}
-	
-}
 
+}
 
 func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendFileReq) (*pb.AppendFileResp, error) {
 	fileName := appendFileReq.GetFileName()
@@ -128,9 +143,9 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
-	lastHandleMeta := allHandleMeta[len(allHandleMeta) - 1]
+	lastHandleMeta := allHandleMeta[len(allHandleMeta)-1]
 	// if the last Chunk can fit data to append
-	if fileSize <= ChunkSize - uint32(lastHandleMeta.Used) {
+	if fileSize <= ChunkSize-uint32(lastHandleMeta.Used) {
 		// TODISC: Do I update the Used and ChunkServerLoad now or later
 		lastHandleMeta.Used += uint(fileSize)
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += uint(fileSize)
@@ -178,7 +193,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		} else {
 			peers = []string{}
 		}
-		
+
 		// Send grpc Create to Primary Chunk Server
 		var conn *grpc.ClientConn
 		conn, err := grpc.Dial(primary, grpc.WithInsecure())
@@ -219,7 +234,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		// add primary and backup to slices which is used in AppendFileResp
 		primarySlice = append(primarySlice, lastHandleMeta.PrimaryChunkServer)
 		chunkHandleSlice = append(chunkHandleSlice, lastHandleMeta.BackupAddress...)
-		
+
 		fileSize -= uint32(used)
 	}
 	res := NewAppendFileResp(OK, primarySlice, chunkHandleSlice)

@@ -2,9 +2,9 @@ package masterserver
 
 import (
 	"fmt"
-	"github.com/tyromancer/cdfs/pb"
 	"sort"
-	
+
+	"github.com/tyromancer/cdfs/pb"
 )
 
 const (
@@ -12,7 +12,8 @@ const (
 	ERROR_FILE_NOT_EXISTS
 	ERROR_PRIMARY_NOT_EXISTS
 	ERROR_FILE_ALREADY_EXISTS
-	ERROR_NO_SERVER_AVAILABLE	
+	ERROR_NO_SERVER_AVAILABLE
+	ERROR_CHUNKSERVER_ALREADY_EXISTS
 )
 
 const (
@@ -29,11 +30,12 @@ func ErrorCodeToString(e int32) string {
 		return "Error: the primary does not exist for the chunk handle"
 	case ERROR_FILE_ALREADY_EXISTS:
 		return "Error: the given FileName does not exist"
+	case ERROR_CHUNKSERVER_ALREADY_EXISTS:
+		return "Error: the chunk server already exists"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
 }
-
 
 type HandleMetaData struct {
 	// unique chunk handle of the chunk
@@ -74,6 +76,9 @@ func lowestThreeChunkServer(chunkServerLoad map[string]uint) []string {
 	return res
 }
 
+func NewCSRegisterResp(errorCode int32) *pb.CSRegisterResp {
+	return &pb.CSRegisterResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
 
 func NewGetLocationResp(errorCode int32, primaryIP string, chunckHandle string) *pb.GetLocationResp {
 	return &pb.GetLocationResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, PrimaryIP: primaryIP, ChunkHandle: chunckHandle}
