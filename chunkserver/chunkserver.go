@@ -77,11 +77,17 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	}
 
 	// file create success, record metadata and return
-	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: Primary, PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0}
+	//primaryChunkServer := ""
+	//if createChunkReq.Role!=Primary{
+	//	primaryChunkServer = createChunkReq.
+	//}
+	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.Role, PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0}
 	s.Chunks[chunkHandle] = metadata
 
 	// TODO: send replicate request to peers
+	if metadata.Role == Primary {
 
+	}
 	return NewCreateChunkResp(OK), nil
 }
 

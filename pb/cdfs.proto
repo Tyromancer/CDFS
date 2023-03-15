@@ -110,7 +110,8 @@ service ChunkServer {
 message CreateChunkReq {
 	string chunkHandle = 1;
 	uint32 role = 2;
-	repeated string peers = 3;
+	string primary = 3;
+	repeated string peers = 4;
 }
 message CreateChunkResp {
 	Status status = 1;

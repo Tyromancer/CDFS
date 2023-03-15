@@ -49,7 +49,7 @@ type ChunkMetaData struct {
 	ChunkLocation string
 
 	// role of current chunkserver for this chunk
-	Role uint
+	Role uint32
 
 	// IP address of primary chunk server for this chunk
 	PrimaryChunkServer string

@@ -43,7 +43,6 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 	s.ChunkServerLoad[csName] = 0
 
 	return NewCSRegisterResp(OK), nil
-
 }
 
 // GetLocation return the IP of the Primary chunkserver and chunkID back to client
@@ -71,7 +70,7 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 	return NewGetLocationResp(OK, primaryIP, handleMeta.ChunkHandle), nil
 }
 
-// // client -> Master Create file given the FileName
+// client -> Master Create file given the FileName
 func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb.CreateResp, error) {
 
 	fileName := createReq.GetFileName()
