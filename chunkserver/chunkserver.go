@@ -3,6 +3,8 @@ package chunkserver
 import (
 	"context"
 	"errors"
+	"fmt"
+	"google.golang.org/grpc"
 	"log"
 	"path"
 
@@ -23,9 +25,36 @@ type ChunkServer struct {
 
 	// base directory to store chunk files
 	BasePath string
+
+	HostName string
+
+	Port uint32
 }
 
-// func (s *ChunkServer) ChunkServerRegister(ctx context.Context)
+func (s *ChunkServer) SendRegister(masterIP string, masterPort uint32) error {
+	csRegisterReq := pb.CSRegisterReq{
+		Host: s.HostName,
+		Port: s.Port,
+	}
+	var conn *grpc.ClientConn
+
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", masterIP, masterPort), grpc.WithInsecure())
+
+	if err != nil {
+		log.Fatalf("Failed to connect to Master %s:%d", masterIP, masterPort)
+	}
+	defer conn.Close()
+
+	c := pb.NewMasterClient(conn)
+	res, err := c.CSRegister(context.Background(), &csRegisterReq)
+
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		log.Fatalf("Error send CSRegister Request: %v", err)
+	}
+
+	return nil
+}
+
 // CreateChunk creates file on local filesystem that represents a chunk per Master Server's request
 func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.CreateChunkReq) (*pb.CreateChunkResp, error) {
 
