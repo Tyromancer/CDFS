@@ -50,9 +50,9 @@ func checkFileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func appendChunkWorkload(t *testing.T, server *ChunkServer, chunkHandle string, appendContent []byte) error {
+func appendChunkWorkload(t *testing.T, server *ChunkServer, chunkHandle string, seqNum uint32, appendContent []byte) error {
 	req := pb.AppendDataReq{
-		SeqNum:      1,
+		SeqNum:      seqNum,
 		ChunkHandle: chunkHandle,
 		FileData:    appendContent,
 		Token:       "appendChunk#1",
@@ -125,7 +125,7 @@ func TestValidAppend(t *testing.T) {
 		t.Errorf("got error %v", err)
 	}
 	appendContent := []byte("appendDataChunkTest")
-	err = appendChunkWorkload(t, &s, chunkHandle, appendContent)
+	err = appendChunkWorkload(t, &s, chunkHandle, 1, appendContent)
 	if err != nil {
 		t.Errorf("TestValidAppend failed, got error %v", err)
 	}
@@ -140,9 +140,34 @@ func TestValidAppend(t *testing.T) {
 }
 
 func TestAppendToNonExistingChunk(t *testing.T) {
+	t.Log("Running TestAppendToNonExistingChunk...")
+	chunkHandle := "chunk#1"
+	s := newChunkServer(t, "cs1")
 
+	appendContent := []byte("appendDataChunkTest")
+	err := appendChunkWorkload(t, &s, chunkHandle, 1, appendContent)
+	if err == nil {
+		t.Errorf("TestAppendToNonExistingChunk failed, should get err")
+	}
 }
 
 func TestAppendWithPrevSeqNum(t *testing.T) {
-
+	t.Log("Running TestAppendWithPrevSeqNum...")
+	chunkHandle := "chunk#1"
+	s := newChunkServer(t, "cs1")
+	chunkFilePath1, err := createChunkWorkload(t, &s, chunkHandle, nil)
+	t.Log("chunk file path is ", chunkFilePath1)
+	if err != nil {
+		t.Errorf("got error %v", err)
+	}
+	appendContent := []byte("appendDataChunkTest")
+	err = appendChunkWorkload(t, &s, chunkHandle, 1, appendContent)
+	err = appendChunkWorkload(t, &s, chunkHandle, 1, appendContent)
+	if err != nil {
+		t.Errorf("TestAppendWithPrevSeqNum failed, got error %v", err)
+	}
+	err = appendChunkWorkload(t, &s, chunkHandle, 0, appendContent)
+	if err == nil {
+		t.Errorf("TestAppendWithPrevSeqNum failed, should have error")
+	}
 }
