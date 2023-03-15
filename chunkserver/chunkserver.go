@@ -67,6 +67,24 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
+	// file create success, record metadata and return
+	primaryChunkServer := ""
+	if createChunkReq.GetRole() != Primary {
+		primaryChunkServer = createChunkReq.Primary
+	}
+
+	// send replicate request to peers
+	if createChunkReq.GetRole() == Primary {
+		for _, peer := range createChunkReq.GetPeers() {
+			forwardErr := ForwardCreateReq(createChunkReq, peer)
+			if forwardErr != nil {
+				// abort create process and return error message
+				res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
+				return res, forwardErr
+			}
+		}
+	}
+
 	// create file on disk
 	//chunkLocation := fmt.Sprintf("/cdfs/%s/%s", s.ServerName, chunkHandle)
 	chunkLocation := path.Join(s.BasePath, chunkHandle)
@@ -76,18 +94,9 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 		return res, err
 	}
 
-	// file create success, record metadata and return
-	//primaryChunkServer := ""
-	//if createChunkReq.Role!=Primary{
-	//	primaryChunkServer = createChunkReq.
-	//}
-	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.Role, PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0}
+	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: primaryChunkServer, PeerAddress: createChunkReq.Peers, Used: 0}
 	s.Chunks[chunkHandle] = metadata
 
-	// TODO: send replicate request to peers
-	if metadata.Role == Primary {
-
-	}
 	return NewCreateChunkResp(OK), nil
 }
 
