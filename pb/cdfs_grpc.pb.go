@@ -28,7 +28,7 @@ type MasterClient interface {
 	Create(ctx context.Context, in *CreateReq, opts ...grpc.CallOption) (*CreateResp, error)
 	// chunk server <-> Master
 	HeartBeat(ctx context.Context, in *HeartBeatPayload, opts ...grpc.CallOption) (*HeartBeatResp, error)
-	GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error)
+	CSRegister(ctx context.Context, in *CSRegisterReq, opts ...grpc.CallOption) (*CSRegisterResp, error)
 }
 
 type masterClient struct {
@@ -84,9 +84,9 @@ func (c *masterClient) HeartBeat(ctx context.Context, in *HeartBeatPayload, opts
 	return out, nil
 }
 
-func (c *masterClient) GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error) {
-	out := new(GetTokenResp)
-	err := c.cc.Invoke(ctx, "/pb.Master/GetToken", in, out, opts...)
+func (c *masterClient) CSRegister(ctx context.Context, in *CSRegisterReq, opts ...grpc.CallOption) (*CSRegisterResp, error) {
+	out := new(CSRegisterResp)
+	err := c.cc.Invoke(ctx, "/pb.Master/CSRegister", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ type MasterServer interface {
 	Create(context.Context, *CreateReq) (*CreateResp, error)
 	// chunk server <-> Master
 	HeartBeat(context.Context, *HeartBeatPayload) (*HeartBeatResp, error)
-	GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error)
+	CSRegister(context.Context, *CSRegisterReq) (*CSRegisterResp, error)
 	mustEmbedUnimplementedMasterServer()
 }
 
@@ -126,8 +126,8 @@ func (UnimplementedMasterServer) Create(context.Context, *CreateReq) (*CreateRes
 func (UnimplementedMasterServer) HeartBeat(context.Context, *HeartBeatPayload) (*HeartBeatResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HeartBeat not implemented")
 }
-func (UnimplementedMasterServer) GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetToken not implemented")
+func (UnimplementedMasterServer) CSRegister(context.Context, *CSRegisterReq) (*CSRegisterResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CSRegister not implemented")
 }
 func (UnimplementedMasterServer) mustEmbedUnimplementedMasterServer() {}
 
@@ -232,20 +232,20 @@ func _Master_HeartBeat_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Master_GetToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTokenReq)
+func _Master_CSRegister_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CSRegisterReq)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MasterServer).GetToken(ctx, in)
+		return srv.(MasterServer).CSRegister(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/pb.Master/GetToken",
+		FullMethod: "/pb.Master/CSRegister",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MasterServer).GetToken(ctx, req.(*GetTokenReq))
+		return srv.(MasterServer).CSRegister(ctx, req.(*CSRegisterReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -278,8 +278,8 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Master_HeartBeat_Handler,
 		},
 		{
-			MethodName: "GetToken",
-			Handler:    _Master_GetToken_Handler,
+			MethodName: "CSRegister",
+			Handler:    _Master_CSRegister_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
