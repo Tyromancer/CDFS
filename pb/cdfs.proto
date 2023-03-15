@@ -22,15 +22,16 @@ service Master {
 	// chunk server <-> Master
 	rpc HeartBeat(HeartBeatPayload) returns (HeartBeatResp) {}
 
-	rpc GetToken(GetTokenReq) returns (GetTokenResp) {}
+	rpc CSRegister(CSRegisterReq) returns (CSRegisterResp) {}
 }
 
-message GetTokenReq {
+message CSRegisterReq {
+	string host = 1;
+	uint32 port = 2;
 }
 
-message GetTokenResp {
-	string token = 1;
-	Status status = 2;
+message CSRegisterResp {
+	Status status = 1;
 }
 
 // TODO: which of these msgs need a token?

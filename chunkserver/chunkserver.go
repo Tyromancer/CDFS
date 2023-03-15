@@ -25,6 +25,7 @@ type ChunkServer struct {
 	BasePath string
 }
 
+// func (s *ChunkServer) ChunkServerRegister(ctx context.Context)
 // CreateChunk creates file on local filesystem that represents a chunk per Master Server's request
 func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.CreateChunkReq) (*pb.CreateChunkResp, error) {
 
