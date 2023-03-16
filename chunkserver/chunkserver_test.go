@@ -14,7 +14,7 @@ func newChunkServer(t *testing.T, name string) ChunkServer {
 	return ChunkServer{Chunks: make(map[string]ChunkMetaData), ClientLastResp: make(map[string]RespMetaData), ServerName: name, BasePath: t.TempDir()}
 }
 
-func setChunkMetaData(cs *ChunkServer, chunkHandle string, chunkLocation string, role uint, primary string) {
+func setChunkMetaData(cs *ChunkServer, chunkHandle string, chunkLocation string, role uint32, primary string) {
 	cs.Chunks[chunkHandle] = ChunkMetaData{ChunkLocation: chunkLocation, Role: role, PrimaryChunkServer: primary}
 }
 

@@ -1,8 +1,11 @@
 package chunkserver
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"github.com/tyromancer/cdfs/pb"
+	"google.golang.org/grpc"
 	"log"
 	"os"
 	"path/filepath"
@@ -115,4 +118,39 @@ func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
 
 func NewAppendDataResp(errorCode int32) *pb.AppendDataResp {
 	return &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
+
+// NewPeerConn establishes and returns a grpc.ClientConn to the specified address
+func NewPeerConn(address string) (*grpc.ClientConn, error) {
+	var conn *grpc.ClientConn
+	conn, err := grpc.Dial(address, grpc.WithInsecure())
+	return conn, err
+}
+
+// ForwardCreateReq establishes a grpc.ClientConn with peer and forwards the pb.CreateChunkReq
+func ForwardCreateReq(req *pb.CreateChunkReq, peer string) error {
+	peerConn, err := NewPeerConn(peer)
+
+	if err != nil {
+		return err
+	}
+
+	defer peerConn.Close()
+
+	peerClient := pb.NewChunkServerClient(peerConn)
+	forwardReq := &pb.CreateChunkReq{
+		ChunkHandle: req.ChunkHandle,
+		Role:        Secondary,
+		Primary:     req.Primary,
+		Peers:       nil,
+	}
+
+	res, err := peerClient.CreateChunk(context.Background(), forwardReq)
+
+	// NOTE: if err != nil, will res be nil?
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		return errors.New(res.GetStatus().GetErrorMessage())
+	}
+
+	return nil
 }

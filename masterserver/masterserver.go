@@ -114,7 +114,7 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 	defer conn.Close()
 
 	c := pb.NewChunkServerClient(conn)
-	req := &pb.CreateChunkReq{ChunkHandle: chunkHandle, Role: 0, Peers: peers}
+	req := &pb.CreateChunkReq{ChunkHandle: chunkHandle, Role: 0, Primary: primary, Peers: peers}
 	res, err := c.CreateChunk(context.Background(), req)
 
 	if err != nil {
@@ -158,6 +158,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	numChunkToADD := int(math.Ceil(float64(fileSize) / float64(ChunkSize)))
 	primarySlice := []string{}
 	chunkHandleSlice := []string{}
+	chunkHandle := "0"
 	// if the last Chunk Used is 0 (One case is that the last chunk is just created from Create(), so empty chunk)
 	if lastHandleMeta.Used == 0 {
 		// TODISC: Update the Used and ChunkServerLoad now or later
@@ -170,7 +171,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		numChunkToADD -= 1
 		fileSize -= ChunkSize
 		primarySlice = append(primarySlice, lastHandleMeta.PrimaryChunkServer)
-		chunkHandleSlice = append(chunkHandleSlice, lastHandleMeta.BackupAddress...)
+		chunkHandleSlice = append(chunkHandleSlice, chunkHandle)
 	}
 
 	for i := 0; i < numChunkToADD; i++ {
@@ -202,7 +203,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		}
 
 		// TODO: Generate chunkHandle
-		chunkHandle := "0"
+		chunkHandle += "0"
 		defer conn.Close()
 
 		c := pb.NewChunkServerClient(conn)
@@ -232,7 +233,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		}
 		// add primary and backup to slices which is used in AppendFileResp
 		primarySlice = append(primarySlice, lastHandleMeta.PrimaryChunkServer)
-		chunkHandleSlice = append(chunkHandleSlice, lastHandleMeta.BackupAddress...)
+		chunkHandleSlice = append(chunkHandleSlice, chunkHandle)
 
 		fileSize -= uint32(used)
 	}
