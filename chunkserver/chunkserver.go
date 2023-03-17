@@ -74,6 +74,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	}
 
 	// send replicate request to peers
+	// TODO: For Master: when receive error, send deleteCreatedChunk message to all
 	if createChunkReq.GetRole() == Primary {
 		for _, peer := range createChunkReq.GetPeers() {
 			forwardErr := ForwardCreateReq(createChunkReq, peer)
@@ -86,7 +87,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	}
 
 	// create file on disk
-	//chunkLocation := fmt.Sprintf("/cdfs/%s/%s", s.ServerName, chunkHandle)
+	// chunkLocation := fmt.Sprintf("/cdfs/%s/%s", s.ServerName, chunkHandle)
 	chunkLocation := path.Join(s.BasePath, chunkHandle)
 	err := CreateFile(chunkLocation)
 	if err != nil {
@@ -130,6 +131,23 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataReq) (*pb.AppendDataResp, error) {
 	token := appendReq.Token
 	seqNum := appendReq.SeqNum
+	chunkHandle := appendReq.ChunkHandle
+	chunkMeta, ok := s.Chunks[chunkHandle]
+	if ok {
+		role := chunkMeta.Role
+		if role != Primary {
+			res := NewAppendDataResp(ERROR_NOT_PRIMARY)
+			return res, errors.New(res.GetStatus().ErrorMessage)
+		}
+	} else {
+		//if chunk not exist
+		res := NewAppendDataResp(ERROR_APPEND_NOT_EXISTS)
+		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
+		s.ClientLastResp[token] = newResp
+		return res, errors.New(res.GetStatus().ErrorMessage)
+	}
+
+	// chunk exist and current chunk server is the primary of target chunk handle
 	respMeta, ok := s.ClientLastResp[token]
 	//If client already connected with the server before
 	if ok {
@@ -143,38 +161,30 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 		}
 	}
 
-	chunkHandle := appendReq.ChunkHandle
 	fileData := appendReq.FileData
 
-	//Check if the chunk exist in the chunk server
-	meta, ok := s.Chunks[chunkHandle]
-	if ok {
-		path := meta.ChunkLocation
-		err := WriteFile(path, fileData)
-		if err != nil {
-			res := NewAppendDataResp(ERROR_APPEND_FAILED)
-			newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: err}
-			s.ClientLastResp[token] = newResp
-			return res, err
-		}
-		//Update the new length in chunkMetaData
-		meta.Used += uint(len(fileData))
-
-		//TODO: ReplicateReq to peers, wait for ACKS
-		//TODO: Notify Master the used length of chunk changed.
-
-		res := NewAppendDataResp(OK)
-		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: nil}
+	path := chunkMeta.ChunkLocation
+	err := WriteFile(path, fileData)
+	if err != nil {
+		res := NewAppendDataResp(ERROR_APPEND_FAILED)
+		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: err}
 		s.ClientLastResp[token] = newResp
-		return res, nil
-	} else {
-		res := NewAppendDataResp(ERROR_APPEND_NOT_EXISTS)
-		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
-		s.ClientLastResp[token] = newResp
-		return res, errors.New(res.GetStatus().ErrorMessage)
+		return res, err
 	}
+	//Update the new length in chunkMetaData
+	chunkMeta.Used += uint(len(fileData))
+
+	//TODO: ReplicateReq to peers, wait for ACKS
+
+	//TODO: Notify Master the used length of chunk changed.
+
+	res := NewAppendDataResp(OK)
+	newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: nil}
+	s.ClientLastResp[token] = newResp
+	return res, nil
 }
 
 func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateReq) (*pb.ReplicateResp, error) {
 	panic("ChunkServer.Replicate not implemented")
+
 }
