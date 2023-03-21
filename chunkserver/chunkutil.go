@@ -70,7 +70,7 @@ type ChunkMetaData struct {
 
 type RespMetaData struct {
 	// client last seq
-	LastSeq uint32
+	LastID string
 
 	// last response to client append request
 	AppendResp *pb.AppendDataResp
@@ -167,5 +167,21 @@ func ForwardCreateReq(req *pb.CreateChunkReq, peer string) error {
 		return errors.New(res.GetStatus().GetErrorMessage())
 	}
 
+	return nil
+}
+
+func NewReplicateReq(req *pb.ReplicateReq, peer string) error {
+	peerConn, err := NewPeerConn(peer)
+
+	if err != nil {
+		return err
+	}
+	defer peerConn.Close()
+
+	peerClient := pb.NewChunkServerClient(peerConn)
+	res, err := peerClient.Replicate(context.Background(), req)
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		return errors.New(res.GetStatus().GetErrorMessage())
+	}
 	return nil
 }

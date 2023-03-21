@@ -129,9 +129,9 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 }
 
 func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataReq) (*pb.AppendDataResp, error) {
-	token := appendReq.Token
-	seqNum := appendReq.SeqNum
-	chunkHandle := appendReq.ChunkHandle
+	token := appendReq.GetToken()
+	newID := appendReq.GetUuid()
+	chunkHandle := appendReq.GetChunkHandle()
 	chunkMeta, ok := s.Chunks[chunkHandle]
 	if ok {
 		role := chunkMeta.Role
@@ -142,41 +142,49 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	} else {
 		//if chunk not exist
 		res := NewAppendDataResp(ERROR_APPEND_NOT_EXISTS)
-		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
-		s.ClientLastResp[token] = newResp
+		//newResp := RespMetaData{LastID: newID, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
+		//s.ClientLastResp[token] = newResp
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
 	// chunk exist and current chunk server is the primary of target chunk handle
 	respMeta, ok := s.ClientLastResp[token]
-	//If client already connected with the server before
+	//If client already executed with the server before
 	if ok {
-		if seqNum == respMeta.LastSeq {
-			return respMeta.AppendResp, respMeta.Err
-		}
-		if seqNum < respMeta.LastSeq {
-			// should not happen
-			res := NewAppendDataResp(ERROR_APPEND_FAILED)
-			return res, errors.New(res.GetStatus().ErrorMessage)
+		lastID := respMeta.LastID
+		if lastID == newID {
+			lastResp := respMeta.AppendResp
+			if lastResp.Status.GetStatusCode() == OK {
+				return lastResp, nil
+			}
 		}
 	}
 
 	fileData := appendReq.FileData
+	curVersion := chunkMeta.Version
 
 	//TODO: ReplicateReq to peers, wait for ACKS
-
-	//TODO: Notify Master the used length of chunk changed.
+	replicateReq := &pb.ReplicateReq{
+		ClientToken: token, ChunkHandle: chunkHandle, FileData: fileData, ReqID: newID, Version: curVersion + 1}
+	for _, peer := range chunkMeta.PeerAddress {
+		sendErr := NewReplicateReq(replicateReq, peer)
+		if sendErr != nil {
+			//abort send replicate process and return error message
+			res := NewAppendDataResp(ERROR_APPEND_FAILED)
+			return res, sendErr
+		}
+	}
 
 	err := WriteFile(&chunkMeta, fileData)
 	if err != nil {
 		res := NewAppendDataResp(ERROR_APPEND_FAILED)
-		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: err}
+		newResp := RespMetaData{LastID: newID, AppendResp: res, Err: err}
 		s.ClientLastResp[token] = newResp
 		return res, err
 	}
 
 	res := NewAppendDataResp(OK)
-	newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: nil}
+	newResp := RespMetaData{LastID: newID, AppendResp: res, Err: nil}
 	s.ClientLastResp[token] = newResp
 	return res, nil
 }

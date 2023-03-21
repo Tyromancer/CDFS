@@ -132,12 +132,13 @@ message ReadResp {
 }
 
 message AppendDataReq {
-	uint32 seqNum = 1;
+	uint32 seqSeq = 1;
 	// was	uint32 chunkID = 2;
 	string chunkHandle = 2;
 
 	bytes fileData = 3;
 	string token = 4;
+	string uuid = 5;
 }
 
 message AppendDataResp {
@@ -146,13 +147,14 @@ message AppendDataResp {
 }
 
 message ReplicateReq {
-	uint32 seqNum = 1;
+	// uint32 seqNum = 1;
 	// was clientIP
-	string clientToken = 2;
+	string clientToken = 1;
 	//	was uint32 chunkID = 3;
-	string chunkHandle = 3;
-	bytes fileData = 4;
-	uint32 uuid = 5;
+	string chunkHandle = 2;
+	bytes fileData = 3;
+	string reqID = 4;
+	uint32 version = 5;
 }
 
 message ReplicateResp {
