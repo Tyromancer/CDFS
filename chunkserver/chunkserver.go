@@ -95,7 +95,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 		return res, err
 	}
 
-	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: primaryChunkServer, PeerAddress: createChunkReq.Peers, Used: 0}
+	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: primaryChunkServer, PeerAddress: createChunkReq.Peers, Used: 0, Version: 0}
 	s.Chunks[chunkHandle] = metadata
 
 	return NewCreateChunkResp(OK), nil
@@ -163,20 +163,17 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 
 	fileData := appendReq.FileData
 
-	path := chunkMeta.ChunkLocation
-	err := WriteFile(path, fileData)
+	//TODO: ReplicateReq to peers, wait for ACKS
+
+	//TODO: Notify Master the used length of chunk changed.
+
+	err := WriteFile(&chunkMeta, fileData)
 	if err != nil {
 		res := NewAppendDataResp(ERROR_APPEND_FAILED)
 		newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: err}
 		s.ClientLastResp[token] = newResp
 		return res, err
 	}
-	//Update the new length in chunkMetaData
-	chunkMeta.Used += uint(len(fileData))
-
-	//TODO: ReplicateReq to peers, wait for ACKS
-
-	//TODO: Notify Master the used length of chunk changed.
 
 	res := NewAppendDataResp(OK)
 	newResp := RespMetaData{LastSeq: seqNum, AppendResp: res, Err: nil}

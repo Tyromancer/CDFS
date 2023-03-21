@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 const (
@@ -59,7 +60,12 @@ type ChunkMetaData struct {
 	PeerAddress        []string
 
 	// Already used size in bytes
-	Used uint
+	Used uint32
+
+	// Add version number
+	Version uint32
+
+	MetaDataLock sync.Mutex
 }
 
 type RespMetaData struct {
@@ -90,7 +96,11 @@ func CreateFile(path string) error {
 	return err
 }
 
-func WriteFile(path string, content []byte) error {
+func WriteFile(chunkMeta *ChunkMetaData, content []byte) error {
+	path := chunkMeta.ChunkLocation
+	chunkMeta.MetaDataLock.Lock()
+	defer chunkMeta.MetaDataLock.Unlock()
+
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -104,7 +114,12 @@ func WriteFile(path string, content []byte) error {
 	}(f)
 
 	_, err = f.Write(content)
-	return err
+	if err != nil {
+		return err
+	}
+	chunkMeta.Version++
+	chunkMeta.Used += uint32(len(content))
+	return nil
 }
 
 // NewReadResp returns a pointer to pb.ReadResp that represents the result of a read with pb.Status
