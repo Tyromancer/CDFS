@@ -49,6 +49,22 @@ message GetLocationReq {
 		uint32 size = 3;
 }
 
+message GetLocationResp{
+	Status status = 1;
+	repeated ChunkServerInfo chunkInfo= 2;
+	// offset only for first
+	// start for the first chunk
+	uint32 start = 3;
+	// end for the last chunk
+	uint32 end = 4;
+}
+
+message ChunkServerInfo{
+	string chunkHandle = 1;
+	string primaryAddress = 2;
+	repeated string backupAddress = 3;
+}
+
 message AppendFileReq {
     string fileName = 1;
     uint32 fileSize = 2;
@@ -76,17 +92,6 @@ message DeleteStatus {
 	Status status = 1;
 }
 
-message GetLocationResp{
-	Status status = 1;
-	repeated string primaryIP = 2;
-//	uint32 chunkID = 3;
-	repeated string chunkHandle = 3;
-	// offset only for first
-	// start for the first chunk
-	uint32 start = 4;
-	// end for the last chunk
-	uint32 end = 5;
-}
 
 message AppendFileResp{
 	Status status = 1;
