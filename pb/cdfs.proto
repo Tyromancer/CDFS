@@ -159,5 +159,5 @@ message ReplicateReq {
 
 message ReplicateResp {
 	Status status = 1;
-	uint32 uuid = 2;
+	uint32 uuid =  2;
 }
