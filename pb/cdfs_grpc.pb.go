@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
+	Master_GetToken_FullMethodName    = "/pb.Master/GetToken"
 	Master_GetLocation_FullMethodName = "/pb.Master/GetLocation"
 	Master_AppendFile_FullMethodName  = "/pb.Master/AppendFile"
 	Master_Delete_FullMethodName      = "/pb.Master/Delete"
@@ -31,6 +32,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MasterClient interface {
+	// Client <-> Master
+	// First message client send to master
+	GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error)
 	GetLocation(ctx context.Context, in *GetLocationReq, opts ...grpc.CallOption) (*GetLocationResp, error)
 	AppendFile(ctx context.Context, in *AppendFileReq, opts ...grpc.CallOption) (*AppendFileResp, error)
 	Delete(ctx context.Context, in *DeleteReq, opts ...grpc.CallOption) (*DeleteStatus, error)
@@ -46,6 +50,15 @@ type masterClient struct {
 
 func NewMasterClient(cc grpc.ClientConnInterface) MasterClient {
 	return &masterClient{cc}
+}
+
+func (c *masterClient) GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error) {
+	out := new(GetTokenResp)
+	err := c.cc.Invoke(ctx, Master_GetToken_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *masterClient) GetLocation(ctx context.Context, in *GetLocationReq, opts ...grpc.CallOption) (*GetLocationResp, error) {
@@ -106,6 +119,9 @@ func (c *masterClient) CSRegister(ctx context.Context, in *CSRegisterReq, opts .
 // All implementations must embed UnimplementedMasterServer
 // for forward compatibility
 type MasterServer interface {
+	// Client <-> Master
+	// First message client send to master
+	GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error)
 	GetLocation(context.Context, *GetLocationReq) (*GetLocationResp, error)
 	AppendFile(context.Context, *AppendFileReq) (*AppendFileResp, error)
 	Delete(context.Context, *DeleteReq) (*DeleteStatus, error)
@@ -120,6 +136,9 @@ type MasterServer interface {
 type UnimplementedMasterServer struct {
 }
 
+func (UnimplementedMasterServer) GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetToken not implemented")
+}
 func (UnimplementedMasterServer) GetLocation(context.Context, *GetLocationReq) (*GetLocationResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLocation not implemented")
 }
@@ -149,6 +168,24 @@ type UnsafeMasterServer interface {
 
 func RegisterMasterServer(s grpc.ServiceRegistrar, srv MasterServer) {
 	s.RegisterService(&Master_ServiceDesc, srv)
+}
+
+func _Master_GetToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTokenReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MasterServer).GetToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Master_GetToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MasterServer).GetToken(ctx, req.(*GetTokenReq))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Master_GetLocation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -267,6 +304,10 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*MasterServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "GetToken",
+			Handler:    _Master_GetToken_Handler,
+		},
+		{
 			MethodName: "GetLocation",
 			Handler:    _Master_GetLocation_Handler,
 		},
@@ -297,6 +338,7 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 
 const (
 	ChunkServer_CreateChunk_FullMethodName = "/pb.ChunkServer/CreateChunk"
+	ChunkServer_ReadVersion_FullMethodName = "/pb.ChunkServer/ReadVersion"
 	ChunkServer_Read_FullMethodName        = "/pb.ChunkServer/Read"
 	ChunkServer_AppendData_FullMethodName  = "/pb.ChunkServer/AppendData"
 	ChunkServer_Replicate_FullMethodName   = "/pb.ChunkServer/Replicate"
@@ -309,6 +351,7 @@ type ChunkServerClient interface {
 	// Master -> ChunkServer
 	CreateChunk(ctx context.Context, in *CreateChunkReq, opts ...grpc.CallOption) (*CreateChunkResp, error)
 	// Client -> ChunkServer
+	ReadVersion(ctx context.Context, in *ReadVersionReq, opts ...grpc.CallOption) (*ReadVersionResp, error)
 	Read(ctx context.Context, in *ReadReq, opts ...grpc.CallOption) (*ReadResp, error)
 	AppendData(ctx context.Context, in *AppendDataReq, opts ...grpc.CallOption) (*AppendDataResp, error)
 	// ChunkServer -> ChunkServer
@@ -326,6 +369,15 @@ func NewChunkServerClient(cc grpc.ClientConnInterface) ChunkServerClient {
 func (c *chunkServerClient) CreateChunk(ctx context.Context, in *CreateChunkReq, opts ...grpc.CallOption) (*CreateChunkResp, error) {
 	out := new(CreateChunkResp)
 	err := c.cc.Invoke(ctx, ChunkServer_CreateChunk_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chunkServerClient) ReadVersion(ctx context.Context, in *ReadVersionReq, opts ...grpc.CallOption) (*ReadVersionResp, error) {
+	out := new(ReadVersionResp)
+	err := c.cc.Invoke(ctx, ChunkServer_ReadVersion_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -366,6 +418,7 @@ type ChunkServerServer interface {
 	// Master -> ChunkServer
 	CreateChunk(context.Context, *CreateChunkReq) (*CreateChunkResp, error)
 	// Client -> ChunkServer
+	ReadVersion(context.Context, *ReadVersionReq) (*ReadVersionResp, error)
 	Read(context.Context, *ReadReq) (*ReadResp, error)
 	AppendData(context.Context, *AppendDataReq) (*AppendDataResp, error)
 	// ChunkServer -> ChunkServer
@@ -379,6 +432,9 @@ type UnimplementedChunkServerServer struct {
 
 func (UnimplementedChunkServerServer) CreateChunk(context.Context, *CreateChunkReq) (*CreateChunkResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateChunk not implemented")
+}
+func (UnimplementedChunkServerServer) ReadVersion(context.Context, *ReadVersionReq) (*ReadVersionResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadVersion not implemented")
 }
 func (UnimplementedChunkServerServer) Read(context.Context, *ReadReq) (*ReadResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Read not implemented")
@@ -416,6 +472,24 @@ func _ChunkServer_CreateChunk_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ChunkServerServer).CreateChunk(ctx, req.(*CreateChunkReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChunkServer_ReadVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadVersionReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).ReadVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChunkServer_ReadVersion_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).ReadVersion(ctx, req.(*ReadVersionReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -484,6 +558,10 @@ var ChunkServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateChunk",
 			Handler:    _ChunkServer_CreateChunk_Handler,
+		},
+		{
+			MethodName: "ReadVersion",
+			Handler:    _ChunkServer_ReadVersion_Handler,
 		},
 		{
 			MethodName: "Read",

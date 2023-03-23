@@ -4,18 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	pb "github.com/tyromancer/cdfs/pb"
 	"google.golang.org/grpc"
 	"log"
 	"path"
-
-	pb "github.com/tyromancer/cdfs/pb"
 )
 
 type ChunkServer struct {
 	pb.UnimplementedChunkServerServer
 
 	// a mapping from ChunkHandle(string) to ChunkMetaData
-	Chunks map[string]ChunkMetaData
+	Chunks map[string]*ChunkMetaData
 
 	// a mapping from client token to client last sequence number
 	ClientLastResp map[string]RespMetaData
@@ -96,7 +95,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	}
 
 	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: primaryChunkServer, PeerAddress: createChunkReq.Peers, Used: 0, Version: 0}
-	s.Chunks[chunkHandle] = metadata
+	s.Chunks[chunkHandle] = &metadata
 
 	return NewCreateChunkResp(OK), nil
 }
@@ -104,7 +103,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 // Read handles read request from client
 func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadResp, error) {
 	clientToken := readReq.Token
-
+	//TODO: add version in read response
 	log.Printf("Received read request from: %s\n", clientToken)
 
 	requestedChunkHandle := readReq.ChunkHandle
@@ -116,14 +115,14 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 		if err != nil {
 			log.Printf("Failed to read chunk at %s with error %v\n", chunkContent, err)
 			errorCode := ERROR_READ_FAILED
-			return NewReadResp(readReq.SeqNum, nil, errorCode), err
+			return NewReadResp(nil, errorCode), err
 		}
 
 		// if the read was successful, return the chunk content with ok status
-		return NewReadResp(readReq.SeqNum, chunkContent, OK), nil
+		return NewReadResp(chunkContent, OK), nil
 	} else {
 		// this chunk server either is not primary or does not have the requested chunk
-		res := NewReadResp(readReq.SeqNum, nil, ERROR_NOT_PRIMARY)
+		res := NewReadResp(nil, ERROR_NOT_PRIMARY)
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 }
@@ -175,7 +174,7 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 		}
 	}
 
-	err := WriteFile(&chunkMeta, fileData)
+	err := WriteFile(chunkMeta, fileData)
 	if err != nil {
 		res := NewAppendDataResp(ERROR_APPEND_FAILED)
 		newResp := RespMetaData{LastID: newID, AppendResp: res, Err: err}
@@ -190,6 +189,53 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 }
 
 func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateReq) (*pb.ReplicateResp, error) {
-	panic("ChunkServer.Replicate not implemented")
+	clientToken := replicateReq.GetClientToken()
+	dataVersionNumber := replicateReq.GetVersion()
+	chunkHandle := replicateReq.GetChunkHandle()
+	requestUUID := replicateReq.GetReqID()
 
+	currentChunkMeta, ok := s.Chunks[chunkHandle]
+
+	if !ok {
+		// TODO: chunk not exist on server, return error message
+		res := NewReplicateResp(ERROR_REPLICATE_NOT_EXISTS, requestUUID)
+		return res, errors.New(res.GetStatus().GetErrorMessage())
+	}
+
+	// chunk exists on this server, check role
+	currentRole := currentChunkMeta.Role
+	if currentRole != Secondary {
+		res := NewReplicateResp(ERROR_NOT_SECONDARY, requestUUID)
+		return res, errors.New(res.GetStatus().GetErrorMessage())
+	}
+
+	// role is secondary (backup)
+	// TODO: check version number
+	currentVersionNumber := currentChunkMeta.Version
+	if currentVersionNumber < dataVersionNumber-1 { // need fetch from primary
+		// TODO: fetch from master (directly here or new RPC request from primary?)
+	} else if currentVersionNumber == dataVersionNumber-1 { // apply append
+		// TODO: append data to disk
+		chunkContent := replicateReq.GetFileData()
+		err := WriteFile(currentChunkMeta, chunkContent)
+
+		if err != nil { // write failed
+			res := NewReplicateResp(ERROR_REPLICATE_FAILED, requestUUID)
+			return res, err
+		}
+
+		res := NewReplicateResp(OK, requestUUID)
+		// add response in server's cached client last response
+		resMeta := RespMetaData{
+			LastID:     requestUUID,
+			AppendResp: ReplicateRespToAppendResp(res),
+			Err:        nil,
+		}
+		s.ClientLastResp[clientToken] = resMeta
+		return res, nil
+	}
+
+	// return error
+	res := NewReplicateResp(ERROR_SHOULD_NOT_HAPPEN, requestUUID)
+	return res, errors.New(res.GetStatus().GetErrorMessage())
 }

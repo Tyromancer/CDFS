@@ -20,13 +20,16 @@ const (
 const (
 	OK int32 = iota
 	ERROR_NOT_PRIMARY
+	ERROR_NOT_SECONDARY
 	ERROR_READ_FAILED
 	ERROR_CHUNK_ALREADY_EXISTS
 	ERROR_CREATE_CHUNK_FAILED
 	ERROR_APPEND_FAILED
-
+	ERROR_REPLICATE_FAILED
 	// ERROR_APPEND_NOT_EXISTS represents the chunk to be appended does not exist on local filesystem
 	ERROR_APPEND_NOT_EXISTS
+	ERROR_REPLICATE_NOT_EXISTS
+	ERROR_SHOULD_NOT_HAPPEN
 )
 
 func ErrorCodeToString(e int32) string {
@@ -35,14 +38,22 @@ func ErrorCodeToString(e int32) string {
 		return "OK"
 	case ERROR_NOT_PRIMARY:
 		return "Error: this chunk server is not primary for this chunk"
+	case ERROR_NOT_SECONDARY:
+		return "Error: this chunk server is not backup for this chunk"
 	case ERROR_READ_FAILED:
 		return "Error: failed to open local file for this chunk"
 	case ERROR_CHUNK_ALREADY_EXISTS:
 		return "Error: chunk already exists"
 	case ERROR_APPEND_FAILED:
 		return "Error: append to chunk failed"
+	case ERROR_REPLICATE_FAILED:
+		return "Error: replicate to chunk failed"
 	case ERROR_APPEND_NOT_EXISTS:
-		return "Error: append to chunk not exisis"
+		return "Error: append to chunk not exists"
+	case ERROR_REPLICATE_NOT_EXISTS:
+		return "Error: replicate chunk not exists"
+	case ERROR_SHOULD_NOT_HAPPEN:
+		return "Error: this should not have happened"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -123,8 +134,8 @@ func WriteFile(chunkMeta *ChunkMetaData, content []byte) error {
 }
 
 // NewReadResp returns a pointer to pb.ReadResp that represents the result of a read with pb.Status
-func NewReadResp(seqNum uint32, fileData []byte, errorCode int32) *pb.ReadResp {
-	return &pb.ReadResp{SeqNum: seqNum, FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+func NewReadResp(fileData []byte, errorCode int32) *pb.ReadResp {
+	return &pb.ReadResp{FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
 }
 
 func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
@@ -133,6 +144,10 @@ func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
 
 func NewAppendDataResp(errorCode int32) *pb.AppendDataResp {
 	return &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
+
+func NewReplicateResp(errorCode int32, uuid string) *pb.ReplicateResp {
+	return &pb.ReplicateResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, Uuid: uuid}
 }
 
 // NewPeerConn establishes and returns a grpc.ClientConn to the specified address
@@ -184,4 +199,8 @@ func NewReplicateReq(req *pb.ReplicateReq, peer string) error {
 		return errors.New(res.GetStatus().GetErrorMessage())
 	}
 	return nil
+}
+
+func ReplicateRespToAppendResp(replicateResp *pb.ReplicateResp) *pb.AppendDataResp {
+	return &pb.AppendDataResp{Status: replicateResp.GetStatus()}
 }
