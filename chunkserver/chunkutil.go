@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 const (
@@ -19,13 +20,16 @@ const (
 const (
 	OK int32 = iota
 	ERROR_NOT_PRIMARY
+	ERROR_NOT_SECONDARY
 	ERROR_READ_FAILED
 	ERROR_CHUNK_ALREADY_EXISTS
 	ERROR_CREATE_CHUNK_FAILED
 	ERROR_APPEND_FAILED
-
+	ERROR_REPLICATE_FAILED
 	// ERROR_APPEND_NOT_EXISTS represents the chunk to be appended does not exist on local filesystem
 	ERROR_APPEND_NOT_EXISTS
+	ERROR_REPLICATE_NOT_EXISTS
+	ERROR_SHOULD_NOT_HAPPEN
 )
 
 func ErrorCodeToString(e int32) string {
@@ -34,14 +38,22 @@ func ErrorCodeToString(e int32) string {
 		return "OK"
 	case ERROR_NOT_PRIMARY:
 		return "Error: this chunk server is not primary for this chunk"
+	case ERROR_NOT_SECONDARY:
+		return "Error: this chunk server is not backup for this chunk"
 	case ERROR_READ_FAILED:
 		return "Error: failed to open local file for this chunk"
 	case ERROR_CHUNK_ALREADY_EXISTS:
 		return "Error: chunk already exists"
 	case ERROR_APPEND_FAILED:
 		return "Error: append to chunk failed"
+	case ERROR_REPLICATE_FAILED:
+		return "Error: replicate to chunk failed"
 	case ERROR_APPEND_NOT_EXISTS:
-		return "Error: append to chunk not exisis"
+		return "Error: append to chunk not exists"
+	case ERROR_REPLICATE_NOT_EXISTS:
+		return "Error: replicate chunk not exists"
+	case ERROR_SHOULD_NOT_HAPPEN:
+		return "Error: this should not have happened"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -59,12 +71,17 @@ type ChunkMetaData struct {
 	PeerAddress        []string
 
 	// Already used size in bytes
-	Used uint
+	Used uint32
+
+	// Add version number
+	Version uint32
+
+	MetaDataLock sync.Mutex
 }
 
 type RespMetaData struct {
 	// client last seq
-	LastSeq uint32
+	LastID string
 
 	// last response to client append request
 	AppendResp *pb.AppendDataResp
@@ -90,7 +107,11 @@ func CreateFile(path string) error {
 	return err
 }
 
-func WriteFile(path string, content []byte) error {
+func WriteFile(chunkMeta *ChunkMetaData, content []byte) error {
+	path := chunkMeta.ChunkLocation
+	chunkMeta.MetaDataLock.Lock()
+	defer chunkMeta.MetaDataLock.Unlock()
+
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -104,12 +125,17 @@ func WriteFile(path string, content []byte) error {
 	}(f)
 
 	_, err = f.Write(content)
-	return err
+	if err != nil {
+		return err
+	}
+	chunkMeta.Version++
+	chunkMeta.Used += uint32(len(content))
+	return nil
 }
 
 // NewReadResp returns a pointer to pb.ReadResp that represents the result of a read with pb.Status
-func NewReadResp(seqNum uint32, fileData []byte, errorCode int32) *pb.ReadResp {
-	return &pb.ReadResp{SeqNum: seqNum, FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+func NewReadResp(fileData []byte, errorCode int32) *pb.ReadResp {
+	return &pb.ReadResp{FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
 }
 
 func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
@@ -118,6 +144,10 @@ func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
 
 func NewAppendDataResp(errorCode int32) *pb.AppendDataResp {
 	return &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
+
+func NewReplicateResp(errorCode int32, uuid string) *pb.ReplicateResp {
+	return &pb.ReplicateResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, Uuid: uuid}
 }
 
 // NewPeerConn establishes and returns a grpc.ClientConn to the specified address
@@ -153,4 +183,24 @@ func ForwardCreateReq(req *pb.CreateChunkReq, peer string) error {
 	}
 
 	return nil
+}
+
+func NewReplicateReq(req *pb.ReplicateReq, peer string) error {
+	peerConn, err := NewPeerConn(peer)
+
+	if err != nil {
+		return err
+	}
+	defer peerConn.Close()
+
+	peerClient := pb.NewChunkServerClient(peerConn)
+	res, err := peerClient.Replicate(context.Background(), req)
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		return errors.New(res.GetStatus().GetErrorMessage())
+	}
+	return nil
+}
+
+func ReplicateRespToAppendResp(replicateResp *pb.ReplicateResp) *pb.AppendDataResp {
+	return &pb.AppendDataResp{Status: replicateResp.GetStatus()}
 }
