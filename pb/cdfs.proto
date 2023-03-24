@@ -148,7 +148,8 @@ message ReadVersionReq {
 }
 
 message ReadVersionResp {
-	uint32 version = 1;
+	Status status = 1;
+	optional uint32 version = 2;
 }
 
 message ReadReq {

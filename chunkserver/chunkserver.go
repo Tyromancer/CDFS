@@ -119,6 +119,21 @@ func (s *ChunkServer) DeleteChunk(ctx context.Context, deleteReq *pb.DeleteChunk
 	return res, nil
 }
 
+// ReadVersion returns the version of a chunk that corresponds with a string chunk handle and returns error if the chunk
+// is not recorded by the ChunkServer
+func (s *ChunkServer) ReadVersion(ctx context.Context, readVersion *pb.ReadVersionReq) (*pb.ReadVersionResp, error) {
+	chunkHandle := readVersion.GetChunkHandle()
+	meta, ok := s.Chunks[chunkHandle]
+	if !ok {
+		res := NewReadVersionResp(ERROR_CHUNK_NOT_EXISTS, nil)
+		return res, errors.New(res.GetStatus().GetErrorMessage())
+	}
+
+	versionNum := meta.Version
+	res := NewReadVersionResp(OK, &versionNum)
+	return res, nil
+}
+
 // Read handles read request from client
 func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadResp, error) {
 	clientToken := readReq.Token

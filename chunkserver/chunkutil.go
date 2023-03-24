@@ -30,6 +30,7 @@ const (
 	ERROR_APPEND_NOT_EXISTS
 	ERROR_REPLICATE_NOT_EXISTS
 	ERROR_SHOULD_NOT_HAPPEN
+	ERROR_CHUNK_NOT_EXISTS
 )
 
 func ErrorCodeToString(e int32) string {
@@ -54,6 +55,8 @@ func ErrorCodeToString(e int32) string {
 		return "Error: replicate chunk not exists"
 	case ERROR_SHOULD_NOT_HAPPEN:
 		return "Error: this should not have happened"
+	case ERROR_CHUNK_NOT_EXISTS:
+		return "Error: chunk does not exist on this server"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -150,6 +153,17 @@ func NewReplicateResp(errorCode int32, uuid string) *pb.ReplicateResp {
 	return &pb.ReplicateResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, Uuid: uuid}
 }
 
+func NewDeleteChunkResp(errorCode int32) *pb.DeleteChunkResp {
+	return &pb.DeleteChunkResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
+
+func NewReadVersionResp(errorCode int32, version *uint32) *pb.ReadVersionResp {
+	return &pb.ReadVersionResp{
+		Status:  &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
+		Version: version,
+	}
+}
+
 // NewPeerConn establishes and returns a grpc.ClientConn to the specified address
 func NewPeerConn(address string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
@@ -199,10 +213,6 @@ func NewReplicateReq(req *pb.ReplicateReq, peer string) error {
 		return errors.New(res.GetStatus().GetErrorMessage())
 	}
 	return nil
-}
-
-func NewDeleteChunkResp(errorCode int32) *pb.DeleteChunkResp {
-	return &pb.DeleteChunkResp{Status: &pb.Status{StatusCode: errorCode}}
 }
 
 func ReplicateRespToAppendResp(replicateResp *pb.ReplicateResp) *pb.AppendDataResp {
