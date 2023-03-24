@@ -201,6 +201,10 @@ func NewReplicateReq(req *pb.ReplicateReq, peer string) error {
 	return nil
 }
 
+func NewDeleteChunkResp(errorCode int32) *pb.DeleteChunkResp {
+	return &pb.DeleteChunkResp{Status: &pb.Status{StatusCode: errorCode}}
+}
+
 func ReplicateRespToAppendResp(replicateResp *pb.ReplicateResp) *pb.AppendDataResp {
 	return &pb.AppendDataResp{Status: replicateResp.GetStatus()}
 }

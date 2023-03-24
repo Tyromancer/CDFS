@@ -104,6 +104,21 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	return NewCreateChunkResp(OK), nil
 }
 
+// DeleteChunk deletes the chunk metadata that corresponds with a string chunk handle on the primary
+// chunk server as well as on backup servers
+func (s *ChunkServer) DeleteChunk(ctx context.Context, deleteReq *pb.DeleteChunkReq) (*pb.DeleteChunkResp, error) {
+	// check if chunk metadata exists in metadata
+	chunkHandle := deleteReq.GetChunkHandle()
+	_, ok := s.Chunks[chunkHandle]
+	if ok {
+		delete(s.Chunks, chunkHandle)
+	}
+
+	// NOTE: will delete always return OK?
+	res := NewDeleteChunkResp(OK)
+	return res, nil
+}
+
 // Read handles read request from client
 func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadResp, error) {
 	clientToken := readReq.Token

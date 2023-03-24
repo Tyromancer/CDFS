@@ -114,7 +114,7 @@ message HeartBeatResp{
 service ChunkServer {
 	// Master -> ChunkServer
 	rpc CreateChunk(CreateChunkReq) returns (CreateChunkResp) {}
-
+	rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkResp) {}
 	// Client -> ChunkServer
 	rpc ReadVersion(ReadVersionReq) returns (ReadVersionResp) {}
 	rpc Read(ReadReq) returns (ReadResp) {}
@@ -124,12 +124,21 @@ service ChunkServer {
 
 }
 
+message DeleteChunkReq {
+	string chunkHandle = 1;
+}
+
+message DeleteChunkResp {
+	Status status = 1;
+}
+
 message CreateChunkReq {
 	string chunkHandle = 1;
 	uint32 role = 2;
 	string primary = 3;
 	repeated string peers = 4;
 }
+
 message CreateChunkResp {
 	Status status = 1;
 }
