@@ -28,19 +28,23 @@ type ChunkServer struct {
 	HostName string
 
 	Port uint32
+
+	MasterIP string
+
+	MasterPort uint32
 }
 
-func (s *ChunkServer) SendRegister(masterIP string, masterPort uint32) error {
+func (s *ChunkServer) SendRegister() error {
 	csRegisterReq := pb.CSRegisterReq{
 		Host: s.HostName,
 		Port: s.Port,
 	}
 	var conn *grpc.ClientConn
 
-	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", masterIP, masterPort), grpc.WithInsecure())
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", s.MasterIP, s.MasterPort), grpc.WithInsecure())
 
 	if err != nil {
-		log.Fatalf("Failed to connect to Master %s:%d", masterIP, masterPort)
+		log.Fatalf("Failed to connect to Master %s:%d", s.MasterIP, s.MasterPort)
 	}
 	defer conn.Close()
 
@@ -238,4 +242,33 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	// return error
 	res := NewReplicateResp(ERROR_SHOULD_NOT_HAPPEN, requestUUID)
 	return res, errors.New(res.GetStatus().GetErrorMessage())
+}
+
+func (s *ChunkServer) SendHeartBeat() {
+	chunkLen := len(s.Chunks)
+	chunkHandles := make([]string, chunkLen)
+	usedSizes := make([]uint32, chunkLen)
+	for chunkHandle, metaData := range s.Chunks {
+		chunkHandles = append(chunkHandles, chunkHandle)
+		usedSizes = append(usedSizes, metaData.Used)
+	}
+	newHeartBeat := pb.HeartBeatPayload{
+		ChunkHandle: chunkHandles,
+		Used:        usedSizes,
+		Name:        s.ServerName,
+	}
+
+	peerConn, err := NewPeerConn(fmt.Sprintf("%s:%d", s.MasterIP, s.MasterPort))
+	defer peerConn.Close()
+	if err != nil {
+		log.Println("Cannot connect to Master: ", err)
+		return
+	}
+
+	peerClient := pb.NewMasterClient(peerConn)
+	res, err := peerClient.HeartBeat(context.Background(), &newHeartBeat)
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		log.Println("HeartBeat Error: ", err)
+	}
+	return
 }
