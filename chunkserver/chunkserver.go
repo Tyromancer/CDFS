@@ -245,6 +245,7 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 }
 
 func (s *ChunkServer) SendHeartBeat() {
+
 	chunkLen := len(s.Chunks)
 	chunkHandles := make([]string, chunkLen)
 	usedSizes := make([]uint32, chunkLen)
