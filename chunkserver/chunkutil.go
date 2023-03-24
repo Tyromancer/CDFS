@@ -93,9 +93,25 @@ type RespMetaData struct {
 	Err error
 }
 
-func LoadChunk(path string) ([]byte, error) {
-	fileContent, err := os.ReadFile(path)
-	return fileContent, err
+// LoadChunk reads a file at the specified path with an offset start and ends the read at end
+// if end equals to 0, LoadChunk reads and returns the whole data starting from start, otherwise
+// it reads and returns (end - start) bytes
+func LoadChunk(path string, start uint32, end uint32) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	buffer := make([]byte, 0)
+	_, err = file.ReadAt(buffer, int64(start))
+	if err != nil {
+		return nil, err
+	}
+
+	if end == 0 {
+		return buffer, nil
+	}
+
+	return buffer[:end-start], nil
 }
 
 func CreateFile(path string) error {
@@ -137,8 +153,8 @@ func WriteFile(chunkMeta *ChunkMetaData, content []byte) error {
 }
 
 // NewReadResp returns a pointer to pb.ReadResp that represents the result of a read with pb.Status
-func NewReadResp(fileData []byte, errorCode int32) *pb.ReadResp {
-	return &pb.ReadResp{FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+func NewReadResp(fileData []byte, errorCode int32, version *uint32) *pb.ReadResp {
+	return &pb.ReadResp{FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, Version: version}
 }
 
 func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {

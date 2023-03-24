@@ -141,22 +141,26 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 	log.Printf("Received read request from: %s\n", clientToken)
 
 	requestedChunkHandle := readReq.ChunkHandle
+	readStart := readReq.GetStart()
+	readEnd := readReq.GetEnd()
 	metadata, ok := s.Chunks[requestedChunkHandle]
-	if ok && metadata.Role == Primary {
-		chunkContent, err := LoadChunk(metadata.ChunkLocation)
 
-		// if the read failed, return an invalid read response with error message
+	if ok {
+		chunkContent, err := LoadChunk(metadata.ChunkLocation, readStart, readEnd)
+
+		// if the read failed, return an invalid read response with error message and nil version number
 		if err != nil {
 			log.Printf("Failed to read chunk at %s with error %v\n", chunkContent, err)
 			errorCode := ERROR_READ_FAILED
-			return NewReadResp(nil, errorCode), err
+			return NewReadResp(nil, errorCode, nil), err
 		}
 
-		// if the read was successful, return the chunk content with ok status
-		return NewReadResp(chunkContent, OK), nil
+		// if the read was successful, return the chunk content with ok status and nil version number
+		chunkVersion := metadata.Version
+		return NewReadResp(chunkContent, OK, &chunkVersion), nil
 	} else {
 		// this chunk server either is not primary or does not have the requested chunk
-		res := NewReadResp(nil, ERROR_NOT_PRIMARY)
+		res := NewReadResp(nil, ERROR_READ_FAILED, nil)
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 }
