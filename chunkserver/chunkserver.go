@@ -71,10 +71,10 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	}
 
 	// file create success, record metadata and return
-	primaryChunkServer := ""
-	if createChunkReq.GetRole() != Primary {
-		primaryChunkServer = createChunkReq.Primary
-	}
+	//primaryChunkServer := ""
+	//if createChunkReq.GetRole() != Primary {
+	//	primaryChunkServer = createChunkReq.Primary
+	//}
 
 	// send replicate request to peers
 	// TODO: For Master: when receive error, send deleteCreatedChunk message to all
@@ -98,10 +98,43 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 		return res, err
 	}
 
-	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: primaryChunkServer, PeerAddress: createChunkReq.Peers, Used: 0, Version: 0}
+	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0, Version: 0}
 	s.Chunks[chunkHandle] = &metadata
 
 	return NewCreateChunkResp(OK), nil
+}
+
+// ForwardCreate create new chunk as backup
+func (s *ChunkServer) ForwardCreate(ctx context.Context, forwardCreateReq *pb.ForwardCreateReq) (*pb.ForwardCreateResp, error) {
+	chunkHandle := forwardCreateReq.GetChunkHandle()
+
+	// check if chunk already exists
+	_, ok := s.Chunks[chunkHandle]
+	if ok {
+		res := NewForwardCreateResp(ERROR_CHUNK_ALREADY_EXISTS)
+		return res, errors.New(res.GetStatus().ErrorMessage)
+	}
+
+	chunkLocation := path.Join(s.BasePath, chunkHandle)
+	err := CreateFile(chunkLocation)
+	if err != nil {
+		res := NewForwardCreateResp(ERROR_CREATE_CHUNK_FAILED)
+		return res, err
+	}
+	newChannel := make(chan string)
+	newTimer := GetVersionTimer{
+		Srv:            s,
+		ChunkHandle:    forwardCreateReq.GetChunkHandle(),
+		Timeout:        100,
+		PrimaryAddress: forwardCreateReq.GetPrimary(),
+		Quit:           newChannel,
+	}
+
+	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: Secondary, PrimaryChunkServer: forwardCreateReq.GetPrimary(), PeerAddress: nil, Used: 0, Version: 0, GetVersionChannel: newChannel}
+	s.Chunks[chunkHandle] = &metadata
+
+	go newTimer.Trigger()
+	return NewForwardCreateResp(OK), nil
 }
 
 // DeleteChunk deletes the chunk metadata that corresponds with a string chunk handle on the primary
@@ -307,3 +340,7 @@ func (s *ChunkServer) SendHeartBeat() {
 	}
 	return
 }
+
+//func (s *ChunkServer) SendGetVersion() {
+//
+//}

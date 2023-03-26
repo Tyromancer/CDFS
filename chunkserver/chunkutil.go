@@ -80,6 +80,8 @@ type ChunkMetaData struct {
 	Version uint32
 
 	MetaDataLock sync.Mutex
+
+	GetVersionChannel chan<- string
 }
 
 type RespMetaData struct {
@@ -161,6 +163,10 @@ func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
 	return &pb.CreateChunkResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
 }
 
+func NewForwardCreateResp(errorCode int32) *pb.ForwardCreateResp {
+	return &pb.ForwardCreateResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+}
+
 func NewAppendDataResp(errorCode int32) *pb.AppendDataResp {
 	return &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
 }
@@ -198,14 +204,12 @@ func ForwardCreateReq(req *pb.CreateChunkReq, peer string) error {
 	defer peerConn.Close()
 
 	peerClient := pb.NewChunkServerClient(peerConn)
-	forwardReq := &pb.CreateChunkReq{
+	forwardReq := &pb.ForwardCreateReq{
 		ChunkHandle: req.ChunkHandle,
-		Role:        Secondary,
 		Primary:     req.Primary,
-		Peers:       nil,
 	}
 
-	res, err := peerClient.CreateChunk(context.Background(), forwardReq)
+	res, err := peerClient.ForwardCreate(context.Background(), forwardReq)
 
 	// NOTE: if err != nil, will res be nil?
 	if err != nil || res.GetStatus().GetStatusCode() != OK {

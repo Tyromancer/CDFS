@@ -22,8 +22,8 @@ service Master {
 
 	// chunk server <-> Master
 	rpc HeartBeat(HeartBeatPayload) returns (HeartBeatResp) {}
-
 	rpc CSRegister(CSRegisterReq) returns (CSRegisterResp) {}
+
 }
 
 message GetTokenReq {
@@ -120,8 +120,9 @@ service ChunkServer {
 	rpc Read(ReadReq) returns (ReadResp) {}
 	rpc AppendData(AppendDataReq) returns (AppendDataResp) {}
 	// ChunkServer -> ChunkServer
+	rpc ForwardCreate(ForwardCreateReq) returns (ForwardCreateResp) {}
 	rpc Replicate(ReplicateReq) returns (ReplicateResp) {}
-
+	rpc GetVersion(GetVersionReq) returns (GetVersionResp) {}
 }
 
 message DeleteChunkReq {
@@ -141,6 +142,26 @@ message CreateChunkReq {
 
 message CreateChunkResp {
 	Status status = 1;
+}
+
+message ForwardCreateReq{
+	string chunkHandle = 1;
+	string primary = 2;
+}
+
+message ForwardCreateResp{
+	Status status = 1;
+}
+
+message GetVersionReq{
+	string chunkHandle = 1;
+	uint32 version = 2;
+}
+
+message GetVersionResp{
+	Status status = 1;
+	optional uint32 version = 2;
+	optional bytes chunkData = 3;
 }
 
 message ReadVersionReq {
