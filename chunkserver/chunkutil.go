@@ -81,7 +81,7 @@ type ChunkMetaData struct {
 
 	MetaDataLock sync.Mutex
 
-	GetVersionChannel chan<- string
+	GetVersionChannel chan string
 }
 
 type RespMetaData struct {
@@ -237,4 +237,13 @@ func NewReplicateReq(req *pb.ReplicateReq, peer string) error {
 
 func ReplicateRespToAppendResp(replicateResp *pb.ReplicateResp) *pb.AppendDataResp {
 	return &pb.AppendDataResp{Status: replicateResp.GetStatus()}
+}
+
+func IsClose[T any](ch <-chan T) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+	}
+	return false
 }

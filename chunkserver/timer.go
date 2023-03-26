@@ -30,6 +30,5 @@ func (t *GetVersionTimer) Trigger() {
 		time.Sleep(time.Duration(t.Timeout) * time.Millisecond)
 		//TODO: select
 		//TODO: default: send GetVersionReq
-
 	}
 }

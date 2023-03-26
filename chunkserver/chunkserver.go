@@ -142,8 +142,12 @@ func (s *ChunkServer) ForwardCreate(ctx context.Context, forwardCreateReq *pb.Fo
 func (s *ChunkServer) DeleteChunk(ctx context.Context, deleteReq *pb.DeleteChunkReq) (*pb.DeleteChunkResp, error) {
 	// check if chunk metadata exists in metadata
 	chunkHandle := deleteReq.GetChunkHandle()
-	_, ok := s.Chunks[chunkHandle]
+	metaData, ok := s.Chunks[chunkHandle]
 	if ok {
+		if !IsClose(metaData.GetVersionChannel) || metaData.GetVersionChannel == nil {
+			close(metaData.GetVersionChannel)
+			metaData.GetVersionChannel = nil
+		}
 		delete(s.Chunks, chunkHandle)
 	}
 
@@ -341,6 +345,10 @@ func (s *ChunkServer) SendHeartBeat() {
 	return
 }
 
-//func (s *ChunkServer) SendGetVersion() {
-//
-//}
+func (s *ChunkServer) SendGetVersion(chunkHandle string) {
+	//metaData, ok := s.Chunks[chunkHandle]
+	//if !ok {
+	//
+	//}
+	// TODO: SendGetVersion
+}
