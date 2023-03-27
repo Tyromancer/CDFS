@@ -123,11 +123,10 @@ func (s *ChunkServer) ForwardCreate(ctx context.Context, forwardCreateReq *pb.Fo
 	}
 	newChannel := make(chan string)
 	newTimer := GetVersionTimer{
-		Srv:            s,
-		ChunkHandle:    forwardCreateReq.GetChunkHandle(),
-		Timeout:        100,
-		PrimaryAddress: forwardCreateReq.GetPrimary(),
-		Quit:           newChannel,
+		Srv:         s,
+		ChunkHandle: forwardCreateReq.GetChunkHandle(),
+		Timeout:     100,
+		Quit:        newChannel,
 	}
 
 	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: Secondary, PrimaryChunkServer: forwardCreateReq.GetPrimary(), PeerAddress: nil, Used: 0, Version: 0, GetVersionChannel: newChannel}
@@ -315,6 +314,39 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	return res, errors.New(res.GetStatus().GetErrorMessage())
 }
 
+func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (*pb.GetVersionResp, error) {
+	chunkHandle := req.GetChunkHandle()
+	version := req.GetVersion()
+
+	meta, ok := s.Chunks[chunkHandle]
+	if !ok {
+		// TODO: indicate chunk was deleted
+		res := NewGetVersionResp(ERROR_CHUNK_NOT_EXISTS, nil, nil)
+		return res, errors.New(res.GetStatus().GetErrorMessage())
+	}
+
+	meta.MetaDataLock.Lock()
+	defer meta.MetaDataLock.Unlock()
+
+	// TODO: check role
+	role := meta.Role
+	if role != Primary {
+		res := NewGetVersionResp(ERROR_NOT_PRIMARY, nil, nil)
+		return res, errors.New(res.GetStatus().GetErrorMessage())
+	}
+
+	// TODO: check version
+	currentVersion := meta.Version
+	if currentVersion == version {
+		res := NewGetVersionResp(OK, &currentVersion, nil)
+		return res, nil
+	}
+
+	// TODO: versions don't match: send file content back to caller
+	// TODO: fetch real chunk data and set fileData field
+	return NewGetVersionResp(ERROR_VERSIONS_DO_NOT_MATCH, &currentVersion, nil), errors.New(ErrorCodeToString(ERROR_VERSIONS_DO_NOT_MATCH))
+}
+
 func (s *ChunkServer) SendHeartBeat() {
 
 	chunkLen := len(s.Chunks)
@@ -345,10 +377,37 @@ func (s *ChunkServer) SendHeartBeat() {
 	return
 }
 
-func (s *ChunkServer) SendGetVersion(chunkHandle string) {
+func (s *ChunkServer) SendGetVersion(chunkHandle string) error {
 	//metaData, ok := s.Chunks[chunkHandle]
 	//if !ok {
 	//
 	//}
 	// TODO: SendGetVersion
+	meta, ok := s.Chunks[chunkHandle]
+	if !ok {
+		return errors.New("chunk was deleted")
+	}
+	primaryAddress := meta.PrimaryChunkServer
+	conn, err := NewPeerConn(primaryAddress)
+	if err != nil {
+		return err
+	}
+	primary := pb.NewChunkServerClient(conn)
+	req := &pb.GetVersionReq{
+		ChunkHandle: chunkHandle,
+		Version:     meta.Version,
+	}
+
+	res, err := primary.GetVersion(context.Background(), req)
+	if err != nil {
+		return err
+	}
+
+	// TODO: check status code
+
+	if res.Version != nil {
+
+	}
+
+	return nil
 }

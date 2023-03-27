@@ -1,6 +1,7 @@
 package chunkserver
 
 import (
+	"log"
 	"time"
 )
 
@@ -18,17 +19,26 @@ func (t *HeartBeatTimer) Trigger() {
 }
 
 type GetVersionTimer struct {
-	Srv            *ChunkServer
-	ChunkHandle    string
-	Timeout        int
-	PrimaryAddress string
-	Quit           <-chan string
+	Srv         *ChunkServer
+	ChunkHandle string
+	Timeout     int
+	Quit        <-chan string
 }
 
 func (t *GetVersionTimer) Trigger() {
 	for true {
 		time.Sleep(time.Duration(t.Timeout) * time.Millisecond)
 		//TODO: select
-		//TODO: default: send GetVersionReq
+		select {
+		case <-t.Quit:
+			return
+		default:
+			//TODO: default: send GetVersionReq
+
+			err := t.Srv.SendGetVersion(t.ChunkHandle)
+			if err != nil {
+				log.Printf("GetVersionTimer error in send get version: %v", err)
+			}
+		}
 	}
 }

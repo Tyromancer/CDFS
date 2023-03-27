@@ -31,6 +31,7 @@ const (
 	ERROR_REPLICATE_NOT_EXISTS
 	ERROR_SHOULD_NOT_HAPPEN
 	ERROR_CHUNK_NOT_EXISTS
+	ERROR_VERSIONS_DO_NOT_MATCH
 )
 
 func ErrorCodeToString(e int32) string {
@@ -57,6 +58,9 @@ func ErrorCodeToString(e int32) string {
 		return "Error: this should not have happened"
 	case ERROR_CHUNK_NOT_EXISTS:
 		return "Error: chunk does not exist on this server"
+	case ERROR_VERSIONS_DO_NOT_MATCH:
+		return "Error: chunk versions do not match"
+
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -154,35 +158,50 @@ func WriteFile(chunkMeta *ChunkMetaData, content []byte) error {
 	return nil
 }
 
+func NewStatus(errorCode int32) *pb.Status {
+	return &pb.Status{
+		StatusCode:   errorCode,
+		ErrorMessage: ErrorCodeToString(errorCode),
+	}
+}
+
 // NewReadResp returns a pointer to pb.ReadResp that represents the result of a read with pb.Status
 func NewReadResp(fileData []byte, errorCode int32, version *uint32) *pb.ReadResp {
-	return &pb.ReadResp{FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, Version: version}
+	return &pb.ReadResp{FileData: fileData, Status: NewStatus(errorCode), Version: version}
 }
 
 func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
-	return &pb.CreateChunkResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+	return &pb.CreateChunkResp{Status: NewStatus(errorCode)}
 }
 
 func NewForwardCreateResp(errorCode int32) *pb.ForwardCreateResp {
-	return &pb.ForwardCreateResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+	return &pb.ForwardCreateResp{Status: NewStatus(errorCode)}
 }
 
 func NewAppendDataResp(errorCode int32) *pb.AppendDataResp {
-	return &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+	return &pb.AppendDataResp{Status: NewStatus(errorCode)}
 }
 
 func NewReplicateResp(errorCode int32, uuid string) *pb.ReplicateResp {
-	return &pb.ReplicateResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, Uuid: uuid}
+	return &pb.ReplicateResp{Status: NewStatus(errorCode), Uuid: uuid}
 }
 
 func NewDeleteChunkResp(errorCode int32) *pb.DeleteChunkResp {
-	return &pb.DeleteChunkResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+	return &pb.DeleteChunkResp{Status: NewStatus(errorCode)}
 }
 
 func NewReadVersionResp(errorCode int32, version *uint32) *pb.ReadVersionResp {
 	return &pb.ReadVersionResp{
-		Status:  &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
+		Status:  NewStatus(errorCode),
 		Version: version,
+	}
+}
+
+func NewGetVersionResp(errorCode int32, version *uint32, fileData []byte) *pb.GetVersionResp {
+	return &pb.GetVersionResp{
+		Status:    NewStatus(errorCode),
+		Version:   version,
+		ChunkData: fileData,
 	}
 }
 
