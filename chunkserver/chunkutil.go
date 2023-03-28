@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tyromancer/cdfs/pb"
+	"golang.org/x/exp/constraints"
 	"google.golang.org/grpc"
 	"log"
 	"os"
@@ -287,4 +288,22 @@ func IsClose[T any](ch <-chan T) bool {
 	default:
 	}
 	return false
+}
+
+type Number interface {
+	constraints.Integer | constraints.Float
+}
+
+func Sum[T Number](slice []T) T {
+	if len(slice) == 0 {
+		return 0
+	}
+	result := slice[0]
+	if len(slice) == 1 {
+		return result
+	}
+	for _, v := range slice[1:] {
+		result += v
+	}
+	return result
 }

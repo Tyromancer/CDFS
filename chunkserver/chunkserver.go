@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc"
 	"log"
 	"path"
+	"sync"
 )
 
 type ChunkServer struct {
@@ -236,16 +237,30 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	fileData := appendReq.FileData
 	curVersion := chunkMeta.Version
 
-	//TODO: ReplicateReq to peers, wait for ACKS
+	// ReplicateReq to peers, wait for ACKS
+	// rewrite replicate requests in concurrent manner
+	wg := sync.WaitGroup{}
+	wg.Add(len(chunkMeta.PeerAddress))
+	replicateErrors := make([]int, len(chunkMeta.PeerAddress))
 	replicateReq := &pb.ReplicateReq{
 		ClientToken: token, ChunkHandle: chunkHandle, FileData: fileData, ReqID: newID, Version: curVersion + 1}
-	for _, peer := range chunkMeta.PeerAddress {
-		sendErr := NewReplicateReq(replicateReq, peer)
-		if sendErr != nil {
-			//abort send replicate process and return error message
-			res := NewAppendDataResp(ERROR_APPEND_FAILED)
-			return res, sendErr
-		}
+
+	for i, peer := range chunkMeta.PeerAddress {
+		go func(idx int, peerAddr string) {
+			sendErr := NewReplicateReq(replicateReq, peerAddr)
+			if sendErr != nil {
+				replicateErrors[idx] = 1
+			} else {
+				replicateErrors[idx] = 0
+			}
+			wg.Done()
+		}(i, peer)
+	}
+	wg.Wait()
+	errorCount := Sum(replicateErrors)
+	if errorCount > len(chunkMeta.PeerAddress)/2 {
+		res := NewAppendDataResp(ERROR_APPEND_FAILED)
+		return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	err := WriteFile(chunkMeta, fileData)
@@ -287,7 +302,9 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	// TODO: check version number
 	currentVersionNumber := currentChunkMeta.Version
 	if currentVersionNumber < dataVersionNumber-1 { // need fetch from primary
-		// TODO: fetch from master (directly here or new RPC request from primary?)
+		// TODO: return error (hopefully timer will fetch latest data from primary)
+		res := NewReplicateResp(ERROR_VERSIONS_DO_NOT_MATCH, requestUUID)
+		return res, errors.New(res.GetStatus().GetErrorMessage())
 	} else if currentVersionNumber == dataVersionNumber-1 { // apply append
 		// TODO: append data to disk
 		chunkContent := replicateReq.GetFileData()
