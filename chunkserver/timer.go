@@ -1,7 +1,6 @@
 package chunkserver
 
 import (
-	"log"
 	"time"
 )
 
@@ -35,10 +34,7 @@ func (t *GetVersionTimer) Trigger() {
 		default:
 			//TODO: default: send GetVersionReq
 
-			err := t.Srv.SendGetVersion(t.ChunkHandle)
-			if err != nil {
-				log.Printf("GetVersionTimer error in send get version: %v", err)
-			}
+			t.Srv.SendGetVersion(t.ChunkHandle)
 		}
 	}
 }

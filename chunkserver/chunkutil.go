@@ -132,6 +132,28 @@ func CreateFile(path string) error {
 	return err
 }
 
+func OverWriteChunk(chunkMeta *ChunkMetaData, content []byte) error {
+	path := chunkMeta.ChunkLocation
+	f, err := os.OpenFile(path, os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			log.Println("failed to close file: ", err)
+		}
+	}(f)
+
+	_, err = f.Write(content)
+	if err != nil {
+		return err
+	}
+	chunkMeta.Used = uint32(len(content))
+	return nil
+}
+
 func WriteFile(chunkMeta *ChunkMetaData, content []byte) error {
 	path := chunkMeta.ChunkLocation
 	chunkMeta.MetaDataLock.Lock()
