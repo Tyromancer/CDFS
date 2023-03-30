@@ -19,13 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Master_GetToken_FullMethodName    = "/pb.Master/GetToken"
-	Master_GetLocation_FullMethodName = "/pb.Master/GetLocation"
-	Master_AppendFile_FullMethodName  = "/pb.Master/AppendFile"
-	Master_Delete_FullMethodName      = "/pb.Master/Delete"
-	Master_Create_FullMethodName      = "/pb.Master/Create"
-	Master_HeartBeat_FullMethodName   = "/pb.Master/HeartBeat"
-	Master_CSRegister_FullMethodName  = "/pb.Master/CSRegister"
+	Master_GetToken_FullMethodName     = "/pb.Master/GetToken"
+	Master_GetLocation_FullMethodName  = "/pb.Master/GetLocation"
+	Master_AppendFile_FullMethodName   = "/pb.Master/AppendFile"
+	Master_Delete_FullMethodName       = "/pb.Master/Delete"
+	Master_Create_FullMethodName       = "/pb.Master/Create"
+	Master_HeartBeat_FullMethodName    = "/pb.Master/HeartBeat"
+	Master_CSRegister_FullMethodName   = "/pb.Master/CSRegister"
+	Master_AppendResult_FullMethodName = "/pb.Master/AppendResult"
 )
 
 // MasterClient is the client API for Master service.
@@ -36,12 +37,14 @@ type MasterClient interface {
 	// First message client send to master
 	GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error)
 	GetLocation(ctx context.Context, in *GetLocationReq, opts ...grpc.CallOption) (*GetLocationResp, error)
+	// rpc Write(fileName, chunkIndex) returns (WriteResp) {}
 	AppendFile(ctx context.Context, in *AppendFileReq, opts ...grpc.CallOption) (*AppendFileResp, error)
 	Delete(ctx context.Context, in *DeleteReq, opts ...grpc.CallOption) (*DeleteStatus, error)
 	Create(ctx context.Context, in *CreateReq, opts ...grpc.CallOption) (*CreateResp, error)
 	// chunk server <-> Master
 	HeartBeat(ctx context.Context, in *HeartBeatPayload, opts ...grpc.CallOption) (*HeartBeatResp, error)
 	CSRegister(ctx context.Context, in *CSRegisterReq, opts ...grpc.CallOption) (*CSRegisterResp, error)
+	AppendResult(ctx context.Context, in *AppendResultReq, opts ...grpc.CallOption) (*AppendResultResp, error)
 }
 
 type masterClient struct {
@@ -115,6 +118,15 @@ func (c *masterClient) CSRegister(ctx context.Context, in *CSRegisterReq, opts .
 	return out, nil
 }
 
+func (c *masterClient) AppendResult(ctx context.Context, in *AppendResultReq, opts ...grpc.CallOption) (*AppendResultResp, error) {
+	out := new(AppendResultResp)
+	err := c.cc.Invoke(ctx, Master_AppendResult_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MasterServer is the server API for Master service.
 // All implementations must embed UnimplementedMasterServer
 // for forward compatibility
@@ -123,12 +135,14 @@ type MasterServer interface {
 	// First message client send to master
 	GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error)
 	GetLocation(context.Context, *GetLocationReq) (*GetLocationResp, error)
+	// rpc Write(fileName, chunkIndex) returns (WriteResp) {}
 	AppendFile(context.Context, *AppendFileReq) (*AppendFileResp, error)
 	Delete(context.Context, *DeleteReq) (*DeleteStatus, error)
 	Create(context.Context, *CreateReq) (*CreateResp, error)
 	// chunk server <-> Master
 	HeartBeat(context.Context, *HeartBeatPayload) (*HeartBeatResp, error)
 	CSRegister(context.Context, *CSRegisterReq) (*CSRegisterResp, error)
+	AppendResult(context.Context, *AppendResultReq) (*AppendResultResp, error)
 	mustEmbedUnimplementedMasterServer()
 }
 
@@ -156,6 +170,9 @@ func (UnimplementedMasterServer) HeartBeat(context.Context, *HeartBeatPayload) (
 }
 func (UnimplementedMasterServer) CSRegister(context.Context, *CSRegisterReq) (*CSRegisterResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CSRegister not implemented")
+}
+func (UnimplementedMasterServer) AppendResult(context.Context, *AppendResultReq) (*AppendResultResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AppendResult not implemented")
 }
 func (UnimplementedMasterServer) mustEmbedUnimplementedMasterServer() {}
 
@@ -296,6 +313,24 @@ func _Master_CSRegister_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Master_AppendResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendResultReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MasterServer).AppendResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Master_AppendResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MasterServer).AppendResult(ctx, req.(*AppendResultReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Master_ServiceDesc is the grpc.ServiceDesc for Master service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -330,6 +365,10 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CSRegister",
 			Handler:    _Master_CSRegister_Handler,
+		},
+		{
+			MethodName: "AppendResult",
+			Handler:    _Master_AppendResult_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

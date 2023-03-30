@@ -15,7 +15,6 @@ service Master {
 	// offset: Master has to main chunk usage.
 
 	//rpc Write(fileName, chunkIndex) returns (WriteResp) {}
-	
 	rpc AppendFile(AppendFileReq) returns (AppendFileResp) {} 
 	rpc Delete(DeleteReq) returns (DeleteStatus) {} 
 	rpc Create(CreateReq) returns (CreateResp) {} // filename only or with content?
@@ -23,7 +22,7 @@ service Master {
 	// chunk server <-> Master
 	rpc HeartBeat(HeartBeatPayload) returns (HeartBeatResp) {}
 	rpc CSRegister(CSRegisterReq) returns (CSRegisterResp) {}
-
+	rpc AppendResult(AppendResultReq) returns (AppendResultResp) {}
 }
 
 message GetTokenReq {
@@ -109,6 +108,16 @@ message HeartBeatPayload{
 
 message HeartBeatResp{
 	Status status = 1;
+}
+
+message AppendResultReq{
+	string chunkHandle = 1;
+	string clientToken = 2;
+	Status status = 3;
+}
+
+message AppendResultResp{
+
 }
 
 service ChunkServer {
