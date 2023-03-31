@@ -85,7 +85,11 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 			return res, errors.New(res.GetStatus().ErrorMessage)
 		}
 		backup := handleMeta.BackupAddress
-		newCSInfoMessage := &pb.ChunkServerInfo{ChunkHandle: handle, PrimaryAddress: primary, BackupAddress: backup}
+		newCSInfoMessage := &pb.ChunkServerInfo{
+			ChunkHandle: handle, 
+			PrimaryAddress: primary, 
+			BackupAddress: backup,
+		}
 		csInfoSlice = append(csInfoSlice, newCSInfoMessage)
 	}
 
@@ -140,7 +144,12 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 	defer conn.Close()
 
 	c := pb.NewChunkServerClient(conn)
-	req := &pb.CreateChunkReq{ChunkHandle: chunkHandle, Role: 0, Primary: primary, Peers: peers}
+	req := &pb.CreateChunkReq{
+		ChunkHandle: chunkHandle, 
+		Role: 0, 
+		Primary: primary, 
+		Peers: peers,
+	}
 	res, err := c.CreateChunk(context.Background(), req)
 
 	if err != nil {
@@ -148,7 +157,12 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 	}
 
 	// update Files mapping
-	handleMeta := HandleMetaData{ChunkHandle: chunkHandle, PrimaryChunkServer: primary, BackupAddress: peers, Used: 0}
+	handleMeta := HandleMetaData{
+		ChunkHandle: chunkHandle, 
+		PrimaryChunkServer: primary, 
+		BackupAddress: peers, 
+		Used: 0,
+	}
 	s.Files[fileName] = []HandleMetaData{handleMeta}
 
 	if res.GetStatus().StatusCode == OK {
@@ -236,7 +250,11 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		defer conn.Close()
 
 		c := pb.NewChunkServerClient(conn)
-		req := &pb.CreateChunkReq{ChunkHandle: chunkHandle, Role: 0, Peers: peers}
+		req := &pb.CreateChunkReq{
+			ChunkHandle: chunkHandle, 
+			Role: 0, 
+			Peers: peers,
+		}
 		res, err := c.CreateChunk(context.Background(), req)
 
 		if err != nil {
@@ -254,7 +272,12 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		if fileSize < ChunkSize {
 			used = uint(fileSize)
 		}
-		handleMeta := HandleMetaData{ChunkHandle: chunkHandle, PrimaryChunkServer: primary, BackupAddress: peers, Used: used}
+		handleMeta := HandleMetaData{
+			ChunkHandle: chunkHandle, 
+			PrimaryChunkServer: primary, 
+			BackupAddress: peers, 
+			Used: used,
+		}
 		s.Files[fileName] = append(s.Files[fileName], handleMeta)
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += used
 		for i := 0; i < len(lastHandleMeta.BackupAddress); i++ {

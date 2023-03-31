@@ -139,21 +139,36 @@ func GenerateToken(length int) (string, error) {
 
 
 func NewCSRegisterResp(errorCode int32) *pb.CSRegisterResp {
-	return &pb.CSRegisterResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+	return &pb.CSRegisterResp{
+		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
+	}
 }
 
 func NewGetLocationResp(errorCode int32, chunkInfo []*pb.ChunkServerInfo, start uint32, end uint32) *pb.GetLocationResp {
-	return &pb.GetLocationResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, ChunkInfo: chunkInfo, Start: start, End: end}
+	return &pb.GetLocationResp{
+		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, 
+		ChunkInfo: chunkInfo, 
+		Start: start, 
+		End: end,
+	}
 }
 
 func NewCreateResp(errorCode int32) *pb.CreateResp {
-	return &pb.CreateResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+	return &pb.CreateResp{
+		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
+	}
 }
 
 func NewAppendFileResp(errorCode int32, primaryIP []string, chunckHandle []string) *pb.AppendFileResp {
-	return &pb.AppendFileResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, PrimaryIP: primaryIP, ChunkHandle: chunckHandle}
+	return &pb.AppendFileResp{
+		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, 
+		PrimaryIP: primaryIP, 
+		ChunkHandle: chunckHandle,
+	}
 }
 
 func NewGetTokenResp(uniqueToken string) *pb.GetTokenResp {
-	return &pb.GetTokenResp{UniqueToken: uniqueToken}
+	return &pb.GetTokenResp{
+		UniqueToken: uniqueToken,
+	}
 }
