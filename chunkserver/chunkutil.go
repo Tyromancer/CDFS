@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/tyromancer/cdfs/pb"
-	"golang.org/x/exp/constraints"
-	"google.golang.org/grpc"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/tyromancer/cdfs/pb"
+	"golang.org/x/exp/constraints"
+	"google.golang.org/grpc"
 )
 
 const (

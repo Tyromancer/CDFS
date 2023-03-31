@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	pb "github.com/tyromancer/cdfs/pb"
-	"google.golang.org/grpc"
 	"log"
 	"path"
 	"sync"
+
+	pb "github.com/tyromancer/cdfs/pb"
+	"google.golang.org/grpc"
 )
 
 type ChunkServer struct {
@@ -211,6 +212,10 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 		role := chunkMeta.Role
 		if role != Primary {
 			res := NewAppendDataResp(ERROR_NOT_PRIMARY)
+			err := sendAppendResult(chunkHandle, token, res.GetStatus(),s.MasterIP,s.MasterPort)
+			if err!= nil {
+				log.Println("Send Append Result to Master: ", err)
+			}
 			return res, errors.New(res.GetStatus().ErrorMessage)
 		}
 	} else {
@@ -218,6 +223,10 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 		res := NewAppendDataResp(ERROR_APPEND_NOT_EXISTS)
 		//newResp := RespMetaData{LastID: newID, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
 		//s.ClientLastResp[token] = newResp
+		err := sendAppendResult(chunkHandle, token, res.GetStatus(),s.MasterIP,s.MasterPort)
+		if err!= nil {
+			log.Println("Send Append Result to Master: ", err)
+		}
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
@@ -260,6 +269,10 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	errorCount := Sum(replicateErrors)
 	if errorCount > len(chunkMeta.PeerAddress)/2 {
 		res := NewAppendDataResp(ERROR_APPEND_FAILED)
+		err := sendAppendResult(chunkHandle, token, res.GetStatus(),s.MasterIP,s.MasterPort)
+		if err!= nil {
+			log.Println("Send Append Result to Master: ", err)
+		}
 		return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
@@ -268,13 +281,37 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 		res := NewAppendDataResp(ERROR_APPEND_FAILED)
 		newResp := RespMetaData{LastID: newID, AppendResp: res, Err: err}
 		s.ClientLastResp[token] = newResp
+		masterSendErr := sendAppendResult(chunkHandle, token, res.GetStatus(),s.MasterIP,s.MasterPort)
+		if masterSendErr!= nil {
+			log.Println("Send Append Result to Master: ", masterSendErr)
+		}
 		return res, err
 	}
 
 	res := NewAppendDataResp(OK)
 	newResp := RespMetaData{LastID: newID, AppendResp: res, Err: nil}
 	s.ClientLastResp[token] = newResp
+	masterSendErr := sendAppendResult(chunkHandle, token, res.GetStatus(),s.MasterIP,s.MasterPort)
+	if masterSendErr!= nil {
+		log.Println("Send Append Result to Master: ", masterSendErr)
+	}
 	return res, nil
+}
+
+func sendAppendResult(chunkHandle string, clientToken string, status *pb.Status, masterIP string, masterPort uint32) error {
+	peerConn, err := NewPeerConn(fmt.Sprintf("%s:%d", masterIP, masterPort))
+	if err != nil {
+		return err
+	}
+	defer peerConn.Close()
+	peerClient := pb.NewMasterClient(peerConn)
+	appendResult := &pb.AppendResultReq{
+		ChunkHandle: chunkHandle,
+		ClientToken: clientToken,
+		Status:      status,
+	}
+	_, err := peerClient.AppendResult(context.Background(), appendResult
+	return err
 }
 
 func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateReq) (*pb.ReplicateResp, error) {
@@ -288,7 +325,7 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	if !ok {
 		// TODO: chunk not exist on server, return error message
 		res := NewReplicateResp(ERROR_REPLICATE_NOT_EXISTS, requestUUID)
-		return res, errors.New(res.GetStatus().GetErrorMessage())
+		return res, errors.New(res.GetSta`tus().GetErrorMessage())
 	}
 
 	// chunk exists on this server, check role
