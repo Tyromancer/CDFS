@@ -28,7 +28,10 @@ type MasterServer struct {
 	BasePath string
 }
 
-// ChunkServer Register
+
+
+
+// chunk server <-> Master : ChunkServer Register, save the chunk server host and port
 func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegisterReq) (*pb.CSRegisterResp, error) {
 	csHost := csRegisterReq.GetHost()
 	csPort := csRegisterReq.GetPort()
@@ -45,30 +48,53 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 	return NewCSRegisterResp(OK), nil
 }
 
+
+
+
 // GetLocation return the IP of the Primary chunkserver and chunkID back to client
 func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLocationReq) (*pb.GetLocationResp, error) {
 
+	var csInfoSlice []*pb.ChunkServerInfo
+	startOffSet := getLocationReq.GetOffset()
+	endOffSet := getLocationReq.GetSize() + startOffSet
 	// Use the given FileName to get the corresponding chunk handles
 	fileName := getLocationReq.GetFileName()
 	allHandles, exist := s.Files[fileName]
 	if !exist {
-		res := NewGetLocationResp(ERROR_FILE_NOT_EXISTS, "", "")
+		res := NewGetLocationResp(ERROR_FILE_NOT_EXISTS, []*pb.ChunkServerInfo{}, 0, 0)
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
-	// Use ChunkIndex to find the Handle that client asks for
-	chunkIndex := getLocationReq.GetChunkIndex()
-	handleMeta := allHandles[chunkIndex]
-	primaryIP := handleMeta.PrimaryChunkServer
+	// find the start location -> start chunk index & start offset in start chunk
+	startLoc := startLocation(allHandles, startOffSet)
+	startChunkIndex := startLoc[0]
+	startFinal := startLoc[1]
 
-	// if the primary does not exist for the chunk handle, report error
-	if primaryIP == "" {
-		res := NewGetLocationResp(ERROR_PRIMARY_NOT_EXISTS, "", "")
-		return res, errors.New(res.GetStatus().ErrorMessage)
+	// find the end location -> end chunk index & end offset in end chunk
+	endLoc := endtLocation(allHandles, endOffSet)
+	endChunkIndex := endLoc[0]
+	endFinal := endLoc[1]
+
+	toReadHandles := allHandles[startChunkIndex:endChunkIndex+1]
+	for _, handleMeta := range toReadHandles {
+		handle := handleMeta.ChunkHandle
+		primary := handleMeta.PrimaryChunkServer
+		// if the primary does not exist for the chunk handle, report error
+		if primary == "" {
+			res := NewGetLocationResp(ERROR_PRIMARY_NOT_EXISTS, []*pb.ChunkServerInfo{}, 0, 0)
+			return res, errors.New(res.GetStatus().ErrorMessage)
+		}
+		backup := handleMeta.BackupAddress
+		newCSInfoMessage := &pb.ChunkServerInfo{ChunkHandle: handle, PrimaryAddress: primary, BackupAddress: backup}
+		csInfoSlice = append(csInfoSlice, newCSInfoMessage)
 	}
-	log.Printf("Find the primary chunk server given the FileName and ChunkIndex")
-	return NewGetLocationResp(OK, primaryIP, handleMeta.ChunkHandle), nil
+
+	log.Printf("Find all the chunkservers to read given the FileName and ChunkIndex")
+	return NewGetLocationResp(OK, csInfoSlice, startFinal, endFinal), nil
 }
+
+
+
 
 // client -> Master Create file given the FileName
 func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb.CreateResp, error) {
@@ -133,6 +159,9 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 
 }
 
+
+
+// Client <-> Master : AppendFile request, given fileName and append size
 func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendFileReq) (*pb.AppendFileResp, error) {
 	fileName := appendFileReq.GetFileName()
 	fileSize := appendFileReq.GetFileSize()
@@ -239,4 +268,21 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	}
 	res := NewAppendFileResp(OK, primarySlice, chunkHandleSlice)
 	return res, nil
+}
+
+
+
+
+/* 
+Client <-> Master : Master return a unique token for each client
+First message client send to master
+*/
+func (s *MasterServer) GetToken(ctx context.Context, getTokenReq *pb.GetTokenReq) (*pb.GetTokenResp, error) {
+	token, err := GenerateToken(16)
+	if err != nil {
+		log.Fatalf("Error when generating token: %v", err)
+        return NewGetTokenResp(""), errors.New(ErrorCodeToString(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN))
+    }
+	return NewGetTokenResp(token), nil
+	
 }

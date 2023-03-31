@@ -3,6 +3,8 @@ package masterserver
 import (
 	"fmt"
 	"sort"
+	"crypto/rand"
+    "encoding/base64"
 
 	"github.com/tyromancer/cdfs/pb"
 )
@@ -14,6 +16,7 @@ const (
 	ERROR_FILE_ALREADY_EXISTS
 	ERROR_NO_SERVER_AVAILABLE
 	ERROR_CHUNKSERVER_ALREADY_EXISTS
+	ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN
 )
 
 const (
@@ -32,6 +35,8 @@ func ErrorCodeToString(e int32) string {
 		return "Error: the given FileName does not exist"
 	case ERROR_CHUNKSERVER_ALREADY_EXISTS:
 		return "Error: the chunk server already exists"
+	case ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN:
+		return "Error: fail to generate unique token string"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -57,6 +62,15 @@ type Pair struct {
 	value uint
 }
 
+type ClientInfo struct {
+	Token string
+	UUID string
+
+	// TODO: Save previous response
+	GetTokenResp *pb.GetTokenResp
+
+}
+
 // return the three(or less) chunkservers that have the lowest load given the ChunkServerLoad map
 func lowestThreeChunkServer(chunkServerLoad map[string]uint) []string {
 	var pairs []Pair
@@ -76,12 +90,60 @@ func lowestThreeChunkServer(chunkServerLoad map[string]uint) []string {
 	return res
 }
 
+
+// given startOffset and fileHandles, return [index of the start chunk, read offset of start chunk]
+func startLocation(fileHandles []HandleMetaData, startOffset uint32) []uint32 {
+	var curSize uint = 0
+	i := 0
+	for curSize + fileHandles[i].Used < uint(startOffset) {
+		curSize += fileHandles[i].Used
+		i++
+	}
+	start := startOffset - uint32(curSize)
+	return []uint32{uint32(i), start}
+}
+
+
+
+// given endOffset and fileHandles, return [index of the last chunk, end offset of last chunk]
+func endtLocation(fileHandles []HandleMetaData, endOffset uint32) []uint32 {
+	var curSize uint = 0
+	i := 0
+	for curSize + fileHandles[i].Used < uint(endOffset) {
+		curSize += fileHandles[i].Used
+		i++
+	}
+	end := endOffset - uint32(curSize)
+	return []uint32{uint32(i), end}
+}
+
+
+
+/* 
+Given the length and generate unique token. 
+For e.g. given 16 would generate a string token of length 24. 
+*/ 
+func GenerateToken(length int) (string, error) {
+    // generate random bytes
+    bytes := make([]byte, length)
+    if _, err := rand.Read(bytes); err != nil {
+        return "", err
+    }
+
+    // encode as base64
+    token := base64.StdEncoding.EncodeToString(bytes)
+
+    return token, nil
+}
+
+
+
 func NewCSRegisterResp(errorCode int32) *pb.CSRegisterResp {
 	return &pb.CSRegisterResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
 }
 
-func NewGetLocationResp(errorCode int32, primaryIP string, chunckHandle string) *pb.GetLocationResp {
-	return &pb.GetLocationResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, PrimaryIP: primaryIP, ChunkHandle: chunckHandle}
+func NewGetLocationResp(errorCode int32, chunkInfo []*pb.ChunkServerInfo, start uint32, end uint32) *pb.GetLocationResp {
+	return &pb.GetLocationResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, ChunkInfo: chunkInfo, Start: start, End: end}
 }
 
 func NewCreateResp(errorCode int32) *pb.CreateResp {
@@ -90,4 +152,8 @@ func NewCreateResp(errorCode int32) *pb.CreateResp {
 
 func NewAppendFileResp(errorCode int32, primaryIP []string, chunckHandle []string) *pb.AppendFileResp {
 	return &pb.AppendFileResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, PrimaryIP: primaryIP, ChunkHandle: chunckHandle}
+}
+
+func NewGetTokenResp(uniqueToken string) *pb.GetTokenResp {
+	return &pb.GetTokenResp{UniqueToken: uniqueToken}
 }
