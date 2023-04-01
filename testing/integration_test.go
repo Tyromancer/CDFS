@@ -25,9 +25,9 @@ func NewChunkServer(t *testing.T, port uint32, msPort uint32) {
 		log.Fatalf("Failed to listen on port %d %v", port, err)
 	}
 
-	s := cs.ChunkServer{Chunks: make(map[string]cs.ChunkMetaData), ClientLastResp: make(map[string]cs.RespMetaData), ServerName: fmt.Sprintf("localhost:%d", port), BasePath: t.TempDir(), HostName: "localhost", Port: port}
+	s := cs.ChunkServer{Chunks: make(map[string]*cs.ChunkMetaData), ClientLastResp: make(map[string]cs.RespMetaData), ServerName: fmt.Sprintf("localhost:%d", port), BasePath: t.TempDir(), HostName: "localhost", Port: port}
 
-	err = s.SendRegister("localhost", msPort)
+	err = s.SendRegister()
 	if err != nil {
 		log.Fatalf("Failed to register on MS: %v", err)
 	}

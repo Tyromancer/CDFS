@@ -4,18 +4,45 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"github.com/tyromancer/cdfs/pb"
+	"google.golang.org/grpc"
+	"net"
 	"os"
 	"path"
 	"testing"
 )
 
+func NewChunkServerInstance(t *testing.T, port uint32, msHost string, msPort uint32, basePath string) {
+	t.Log("Create New Chunk Server")
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		t.Fatalf("Failed to listen on port %d %v", port, err)
+	}
+
+	s := ChunkServer{Chunks: make(map[string]*ChunkMetaData), ClientLastResp: make(map[string]RespMetaData), ServerName: fmt.Sprintf("localhost:%d", port), BasePath: basePath, HostName: "localhost", Port: port, MasterIP: msHost, MasterPort: msPort}
+
+	if msHost != "" {
+		err = s.SendRegister()
+		if err != nil {
+			t.Fatalf("Failed to register on MS: %v", err)
+		}
+	}
+
+	grpcServer := grpc.NewServer()
+	pb.RegisterChunkServerServer(grpcServer, &s)
+
+	if err = grpcServer.Serve(lis); err != nil {
+		t.Fatalf("Failed to serve chunk server: %v", err)
+	}
+}
+
 func newChunkServer(t *testing.T, name string) ChunkServer {
-	return ChunkServer{Chunks: make(map[string]ChunkMetaData), ClientLastResp: make(map[string]RespMetaData), ServerName: name, BasePath: t.TempDir()}
+	return ChunkServer{Chunks: make(map[string]*ChunkMetaData), ClientLastResp: make(map[string]RespMetaData), ServerName: name, BasePath: t.TempDir()}
 }
 
 func setChunkMetaData(cs *ChunkServer, chunkHandle string, chunkLocation string, role uint32, primary string) {
-	cs.Chunks[chunkHandle] = ChunkMetaData{ChunkLocation: chunkLocation, Role: role, PrimaryChunkServer: primary}
+	cs.Chunks[chunkHandle] = &ChunkMetaData{ChunkLocation: chunkLocation, Role: role, PrimaryChunkServer: primary}
 }
 
 func makeFilePath(server *ChunkServer, chunkHandle string) string {
@@ -50,12 +77,12 @@ func checkFileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func appendChunkWorkload(t *testing.T, server *ChunkServer, chunkHandle string, seqNum uint32, appendContent []byte) error {
+func appendChunkWorkload(t *testing.T, server *ChunkServer, chunkHandle string, appendContent []byte, uuid string) error {
 	req := pb.AppendDataReq{
-		SeqNum:      seqNum,
 		ChunkHandle: chunkHandle,
 		FileData:    appendContent,
 		Token:       "appendChunk#1",
+		Uuid:        uuid,
 	}
 	got, err := server.AppendData(context.Background(), &req)
 	if got.GetStatus().GetStatusCode() != OK || err != nil {
@@ -71,7 +98,7 @@ func TestClientReadInvalidRead(t *testing.T) {
 	s := newChunkServer(t, "cs1")
 	setChunkMetaData(&s, "chunk#1", "/cdfs/cs1/chunk1", Secondary, "cs2")
 
-	req1 := pb.ReadReq{SeqNum: 0, ChunkHandle: "chunk#2", Token: "client1"}
+	req1 := pb.ReadReq{ChunkHandle: "chunk#2", Token: "client1"}
 	got1, err := s.Read(context.Background(), &req1)
 	wanted1 := ERROR_NOT_PRIMARY
 	if got1.Status.GetStatusCode() != wanted1 || err == nil {
@@ -82,8 +109,23 @@ func TestClientReadInvalidRead(t *testing.T) {
 // TestCreateValidChunk tests the ChunkServer behavior on creating a valid chunk via the Create RPC
 func TestCreateValidChunk(t *testing.T) {
 	t.Log("Running TestCreateValidChunk...")
-	s := newChunkServer(t, "cs1")
-	chunkFilePath, err := createChunkWorkload(t, &s, "chunk#1", nil)
+	primaryAddr, primaryPort := "localhost", uint32(12345)
+	backupAddr1, backupPort1 := "localhost", uint32(12346)
+	backupAddr2, backupPort2 := "localhost", uint32(12347)
+
+	primaryBasePath, backupBasePath1, backupBasePath2 := t.TempDir(), t.TempDir(), t.TempDir()
+
+	go NewChunkServerInstance(t, primaryPort, "", 0, primaryBasePath)
+	go NewChunkServerInstance(t, backupPort1, "", 0, backupBasePath1)
+	go NewChunkServerInstance(t, backupPort2, "", 0, backupBasePath2)
+
+	// send create rpc to primary
+	chunkHandle := "chunk#1"
+	role := Primary
+
+	primaryConn := NewPeerConn()
+
+	chunkFilePath, err := createChunkWorkload(t, &primary, "chunk#1", nil)
 	if err != nil {
 		t.Errorf("got error %v", err)
 	}
