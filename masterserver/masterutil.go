@@ -5,8 +5,12 @@ import (
 	"sort"
 	"crypto/rand"
     "encoding/base64"
+	"context"
+	"errors"
+	"log"
 
 	"github.com/tyromancer/cdfs/pb"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -17,6 +21,7 @@ const (
 	ERROR_NO_SERVER_AVAILABLE
 	ERROR_CHUNKSERVER_ALREADY_EXISTS
 	ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN
+	ERROR_FAIL_TO_DELETE
 )
 
 const (
@@ -37,6 +42,8 @@ func ErrorCodeToString(e int32) string {
 		return "Error: the chunk server already exists"
 	case ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN:
 		return "Error: fail to generate unique token string"
+	case ERROR_FAIL_TO_DELETE:
+		return "Error: fail to delete"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -138,6 +145,35 @@ func GenerateToken(length int) (string, error) {
 
 
 
+/* 
+helper function: given primary and chunkHandle, 
+call DeleteChunk grpc to delete the chunk
+*/
+func DeleteChunkHandle(primary string, chunkHandle string) error {
+	// Call primary chunk server to delete the chunk with the chunk handle
+	var conn *grpc.ClientConn
+	conn, err := grpc.Dial(primary, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("Failed to connect to Chunk Server: %v", err)
+	}
+	defer conn.Close()
+
+	c := pb.NewChunkServerClient(conn)
+	req := &pb.DeleteChunkReq{
+		ChunkHandle: chunkHandle, 
+	}
+	resp, err := c.DeleteChunk(context.Background(), req)
+
+	// if grpc return an Error, handle this error back in main function
+	if resp.GetStatus().StatusCode != OK || err != nil {
+		return errors.New(ErrorCodeToString(ERROR_FAIL_TO_DELETE))
+	}
+	return nil
+}
+
+
+
+
 func NewCSRegisterResp(errorCode int32) *pb.CSRegisterResp {
 	return &pb.CSRegisterResp{
 		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
@@ -170,5 +206,12 @@ func NewAppendFileResp(errorCode int32, primaryIP []string, chunckHandle []strin
 func NewGetTokenResp(uniqueToken string) *pb.GetTokenResp {
 	return &pb.GetTokenResp{
 		UniqueToken: uniqueToken,
+	}
+}
+
+
+func NewDeleteStatus(errorCode int32) *pb.DeleteStatus {
+	return &pb.DeleteStatus{
+		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
 	}
 }

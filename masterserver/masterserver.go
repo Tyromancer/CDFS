@@ -309,3 +309,35 @@ func (s *MasterServer) GetToken(ctx context.Context, getTokenReq *pb.GetTokenReq
 	return NewGetTokenResp(token), nil
 	
 }
+
+
+
+
+// Client <-> Master : Delete a file given the filename
+func (s *MasterServer) 	Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*pb.DeleteStatus, error) {
+	fileName := deleteReq.GetFileName()
+	allHandles, exist := s.Files[fileName]
+	if !exist {
+		res := NewDeleteStatus(ERROR_FILE_NOT_EXISTS)
+		return res, errors.New(res.GetStatus().ErrorMessage)
+	}
+
+	// for each loop to delete each chunk
+	for _, handleMeta := range allHandles {
+		chunkHandle := handleMeta.ChunkHandle
+		primary := handleMeta.PrimaryChunkServer
+		if primary == "" {
+			res := NewDeleteStatus(ERROR_PRIMARY_NOT_EXISTS)
+			return res, errors.New(res.GetStatus().ErrorMessage)
+		}
+		// Use helper function to delete the chunk
+		err := DeleteChunkHandle(primary, chunkHandle)
+		if err != nil {
+			res := NewDeleteStatus(ERROR_FAIL_TO_DELETE)
+			return res, err
+		}
+	}
+
+	res := NewDeleteStatus(OK)
+	return res, nil
+}
