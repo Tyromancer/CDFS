@@ -34,6 +34,9 @@ type ChunkServer struct {
 	MasterIP string
 
 	MasterPort uint32
+
+	Debug     bool
+	DebugChan chan DebugInfo
 }
 
 func (s *ChunkServer) SendRegister() error {
@@ -371,11 +374,21 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	return res, errors.New(res.GetStatus().GetErrorMessage())
 }
 
-func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (*pb.GetVersionResp, error) {
+func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (res *pb.GetVersionResp, err error) {
 	chunkHandle := req.GetChunkHandle()
 	version := req.GetVersion()
 
 	meta, ok := s.Chunks[chunkHandle]
+	defer func() {
+		if s.Debug == true {
+			debugInfo := DebugInfo{
+				Addr:       s.ServerName,
+				Func:       "GetVersion",
+				StatusCode: res.GetStatus().GetStatusCode(),
+			}
+			s.DebugChan <- debugInfo
+		}
+	}()
 	if !ok {
 		// indicate chunk was deleted
 		res := NewGetVersionResp(ERROR_CHUNK_NOT_EXISTS, nil, nil)
@@ -453,7 +466,7 @@ func (s *ChunkServer) SendGetVersion(chunkHandle string) {
 	primaryAddress := meta.PrimaryChunkServer
 	conn, err := NewPeerConn(primaryAddress)
 	if err != nil {
-		log.Println("SendGetVersion: failed to connect to primary")
+		log.Println("SendGetVersion: failed to connect to primary at ", primaryAddress)
 		return
 	}
 	primary := pb.NewChunkServerClient(conn)
