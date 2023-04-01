@@ -19,7 +19,7 @@ func main() {
 	defer conn.Close()
 
 	c := pb.NewChunkServerClient(conn)
-	req := &pb.ReadReq{SeqNum: 0, ChunkHandle: "0", Token: "TestClientToken"}
+	req := &pb.ReadReq{ChunkHandle: "0", Token: "TestClientToken"}
 	res, err := c.Read(context.Background(), req)
 
 	if err != nil {

@@ -15,15 +15,14 @@ service Master {
 	// offset: Master has to main chunk usage.
 
 	//rpc Write(fileName, chunkIndex) returns (WriteResp) {}
-	
 	rpc AppendFile(AppendFileReq) returns (AppendFileResp) {} 
 	rpc Delete(DeleteReq) returns (DeleteStatus) {} 
 	rpc Create(CreateReq) returns (CreateResp) {} // filename only or with content?
 
 	// chunk server <-> Master
 	rpc HeartBeat(HeartBeatPayload) returns (HeartBeatResp) {}
-
 	rpc CSRegister(CSRegisterReq) returns (CSRegisterResp) {}
+	rpc AppendResult(AppendResultReq) returns (AppendResultResp) {}
 }
 
 message GetTokenReq {
@@ -68,6 +67,7 @@ message ChunkServerInfo{
 message AppendFileReq {
     string fileName = 1;
     uint32 fileSize = 2;
+		string uuid = 3;
 }
 
 message DeleteReq {
@@ -111,17 +111,36 @@ message HeartBeatResp{
 	Status status = 1;
 }
 
+message AppendResultReq{
+	string chunkHandle = 1;
+	string clientToken = 2;
+	Status status = 3;
+}
+
+message AppendResultResp{
+
+}
+
 service ChunkServer {
 	// Master -> ChunkServer
 	rpc CreateChunk(CreateChunkReq) returns (CreateChunkResp) {}
-
+	rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkResp) {}
 	// Client -> ChunkServer
 	rpc ReadVersion(ReadVersionReq) returns (ReadVersionResp) {}
 	rpc Read(ReadReq) returns (ReadResp) {}
 	rpc AppendData(AppendDataReq) returns (AppendDataResp) {}
 	// ChunkServer -> ChunkServer
+	rpc ForwardCreate(ForwardCreateReq) returns (ForwardCreateResp) {}
 	rpc Replicate(ReplicateReq) returns (ReplicateResp) {}
+	rpc GetVersion(GetVersionReq) returns (GetVersionResp) {}
+}
 
+message DeleteChunkReq {
+	string chunkHandle = 1;
+}
+
+message DeleteChunkResp {
+	Status status = 1;
 }
 
 message CreateChunkReq {
@@ -130,8 +149,29 @@ message CreateChunkReq {
 	string primary = 3;
 	repeated string peers = 4;
 }
+
 message CreateChunkResp {
 	Status status = 1;
+}
+
+message ForwardCreateReq{
+	string chunkHandle = 1;
+	string primary = 2;
+}
+
+message ForwardCreateResp{
+	Status status = 1;
+}
+
+message GetVersionReq{
+	string chunkHandle = 1;
+	uint32 version = 2;
+}
+
+message GetVersionResp{
+	Status status = 1;
+	optional uint32 version = 2;
+	optional bytes chunkData = 3;
 }
 
 message ReadVersionReq {
@@ -139,7 +179,8 @@ message ReadVersionReq {
 }
 
 message ReadVersionResp {
-	uint32 version = 1;
+	Status status = 1;
+	optional uint32 version = 2;
 }
 
 message ReadReq {
@@ -166,7 +207,6 @@ message AppendDataReq {
 	bytes fileData = 2;
 	string token = 3;
 	string uuid = 4;
-	uint32 offset = 5;
 }
 
 message AppendDataResp {
