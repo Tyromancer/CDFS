@@ -67,6 +67,7 @@ message ChunkServerInfo{
 message AppendFileReq {
     string fileName = 1;
     uint32 fileSize = 2;
+		string uuid = 3;
 }
 
 message DeleteReq {
@@ -206,7 +207,6 @@ message AppendDataReq {
 	bytes fileData = 2;
 	string token = 3;
 	string uuid = 4;
-	uint32 offset = 5;
 }
 
 message AppendDataResp {

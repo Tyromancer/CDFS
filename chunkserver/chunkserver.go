@@ -278,14 +278,16 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 
 	err := WriteFile(chunkMeta, fileData)
 	if err != nil {
-		res := NewAppendDataResp(ERROR_APPEND_FAILED)
-		newResp := RespMetaData{LastID: newID, AppendResp: res, Err: err}
-		s.ClientLastResp[token] = newResp
-		masterSendErr := sendAppendResult(chunkHandle, token, res.GetStatus(), s.MasterIP, s.MasterPort)
-		if masterSendErr != nil {
-			log.Println("Send Append Result to Master: ", masterSendErr)
-		}
-		return res, err
+		panic("failed to write to disk")
+
+		//res := NewAppendDataResp(ERROR_APPEND_FAILED)
+		//newResp := RespMetaData{LastID: newID, AppendResp: res, Err: err}
+		//s.ClientLastResp[token] = newResp
+		//masterSendErr := sendAppendResult(chunkHandle, token, res.GetStatus(), s.MasterIP, s.MasterPort)
+		//if masterSendErr != nil {
+		//	log.Println("Send Append Result to Master: ", masterSendErr)
+		//}
+		//return res, err
 	}
 
 	res := NewAppendDataResp(OK)
@@ -348,8 +350,9 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 		err := WriteFile(currentChunkMeta, chunkContent)
 
 		if err != nil { // write failed
-			res := NewReplicateResp(ERROR_REPLICATE_FAILED, requestUUID)
-			return res, err
+			panic("failed to write to disk")
+			//res := NewReplicateResp(ERROR_REPLICATE_FAILED, requestUUID)
+			//return res, err
 		}
 
 		res := NewReplicateResp(OK, requestUUID)

@@ -99,7 +99,7 @@ func lowestThreeChunkServer(chunkServerLoad map[string]uint) []string {
 
 
 // given startOffset and fileHandles, return [index of the start chunk, read offset of start chunk]
-func startLocation(fileHandles []HandleMetaData, startOffset uint32) []uint32 {
+func startLocation(fileHandles []*HandleMetaData, startOffset uint32) []uint32 {
 	var curSize uint = 0
 	i := 0
 	for curSize + fileHandles[i].Used < uint(startOffset) {
@@ -113,7 +113,7 @@ func startLocation(fileHandles []HandleMetaData, startOffset uint32) []uint32 {
 
 
 // given endOffset and fileHandles, return [index of the last chunk, end offset of last chunk]
-func endtLocation(fileHandles []HandleMetaData, endOffset uint32) []uint32 {
+func endtLocation(fileHandles []*HandleMetaData, endOffset uint32) []uint32 {
 	var curSize uint = 0
 	i := 0
 	for curSize + fileHandles[i].Used < uint(endOffset) {

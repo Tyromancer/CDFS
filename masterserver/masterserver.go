@@ -16,7 +16,7 @@ type MasterServer struct {
 	pb.UnimplementedMasterServer
 
 	// a mapping from File name to A slice of HandleMetaData
-	Files map[string][]HandleMetaData
+	Files map[string][]*HandleMetaData
 
 	// a map from the unique Token(Host:Port) of ChunkServer to its Used (sort on value Used)
 	ChunkServerLoad map[string]uint
@@ -163,7 +163,7 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 		BackupAddress: peers, 
 		Used: 0,
 	}
-	s.Files[fileName] = []HandleMetaData{handleMeta}
+	s.Files[fileName] = []*HandleMetaData{&handleMeta}
 
 	if res.GetStatus().StatusCode == OK {
 		return NewCreateResp(res.GetStatus().StatusCode), nil
@@ -278,7 +278,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 			BackupAddress: peers, 
 			Used: used,
 		}
-		s.Files[fileName] = append(s.Files[fileName], handleMeta)
+		s.Files[fileName] = append(s.Files[fileName], &handleMeta)
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += used
 		for i := 0; i < len(lastHandleMeta.BackupAddress); i++ {
 			s.ChunkServerLoad[lastHandleMeta.BackupAddress[i]] += used
