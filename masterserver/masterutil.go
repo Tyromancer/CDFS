@@ -215,3 +215,8 @@ func NewDeleteStatus(errorCode int32) *pb.DeleteStatus {
 		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
 	}
 }
+
+
+func NewAppendResultResp() *pb.AppendResultResp {
+	return &pb.AppendResultResp{}
+}

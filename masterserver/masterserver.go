@@ -18,6 +18,9 @@ type MasterServer struct {
 	// a mapping from File name to A slice of HandleMetaData
 	Files map[string][]*HandleMetaData
 
+	// a mapping from chunk handle to HandleMetaData
+	HandleToMeta map[string]*HandleMetaData
+
 	// a map from the unique Token(Host:Port) of ChunkServer to its Used (sort on value Used)
 	ChunkServerLoad map[string]uint
 
@@ -140,7 +143,10 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 	}
 
 	// TODO: Generate chunkHandle
-	chunkHandle := "0"
+	chunkHandle, err := GenerateToken(16)
+	if err != nil {
+		log.Fatalf("Error when generate token: %v", err)
+	}
 	defer conn.Close()
 
 	c := pb.NewChunkServerClient(conn)
@@ -164,6 +170,7 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 		Used: 0,
 	}
 	s.Files[fileName] = []*HandleMetaData{&handleMeta}
+	s.HandleToMeta[chunkHandle] = &handleMeta
 
 	if res.GetStatus().StatusCode == OK {
 		return NewCreateResp(res.GetStatus().StatusCode), nil
@@ -201,7 +208,12 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	numChunkToADD := int(math.Ceil(float64(fileSize) / float64(ChunkSize)))
 	primarySlice := []string{}
 	chunkHandleSlice := []string{}
-	chunkHandle := "0"
+	chunkHandle, err := GenerateToken(16)
+	// TODISC: how to handle the error
+	if err != nil {
+		log.Fatalf("Error when generate token: %v", err)
+	}
+
 	// if the last Chunk Used is 0 (One case is that the last chunk is just created from Create(), so empty chunk)
 	if lastHandleMeta.Used == 0 {
 		// TODISC: Update the Used and ChunkServerLoad now or later
@@ -245,8 +257,11 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 			log.Fatalf("Failed to connect to Chunk Server: %v", err)
 		}
 
-		// TODO: Generate chunkHandle
-		chunkHandle += "0"
+		chunkHandle, err := GenerateToken(16)
+		// TODISC: how to handle the error
+		if err != nil {
+			log.Fatalf("Error when generate token: %v", err)
+		}
 		defer conn.Close()
 
 		c := pb.NewChunkServerClient(conn)
@@ -267,7 +282,6 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		}
 
 		// update Files and ChunkServerLoad mapping
-		// TODISC: whether set the "Used" to size of data or 0. Do we update the handleMetaData info only when receive HeartBeat from Chunk Server
 		used := uint(ChunkSize)
 		if fileSize < ChunkSize {
 			used = uint(fileSize)
@@ -279,6 +293,8 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 			Used: used,
 		}
 		s.Files[fileName] = append(s.Files[fileName], &handleMeta)
+		s.HandleToMeta[chunkHandle] = &handleMeta
+
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += used
 		for i := 0; i < len(lastHandleMeta.BackupAddress); i++ {
 			s.ChunkServerLoad[lastHandleMeta.BackupAddress[i]] += used
@@ -341,3 +357,26 @@ func (s *MasterServer) 	Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*p
 	res := NewDeleteStatus(OK)
 	return res, nil
 }
+
+
+
+// chunk server <-> Master : modify used and load based on append outcome
+func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.AppendResultReq) (*pb.AppendResultResp, error) {
+	statusCode := appendResultReq.GetStatus().GetStatusCode()
+	chunkHandle := appendResultReq.GetChunkHandle()
+	size := appendResultReq.GetSize()
+
+	// if append fail, modify chunkMeta Used & chunkserver load
+	if statusCode != OK {
+		chunkMetaData := s.HandleToMeta[chunkHandle]
+		chunkMetaData.Used -= uint (size)
+		primary := chunkMetaData.PrimaryChunkServer
+		s.ChunkServerLoad[primary] -= uint (size)
+		for i := 0; i < len(chunkMetaData.BackupAddress); i++ {
+			s.ChunkServerLoad[chunkMetaData.BackupAddress[i]] -= uint (size)
+		}
+	}
+
+	return NewAppendResultResp(), nil
+}
+
