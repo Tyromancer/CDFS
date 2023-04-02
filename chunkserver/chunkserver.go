@@ -211,11 +211,12 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	newID := appendReq.GetUuid()
 	chunkHandle := appendReq.GetChunkHandle()
 	chunkMeta, ok := s.Chunks[chunkHandle]
+	appendSize := uint32(len(appendReq.FileData))
 	if ok {
 		role := chunkMeta.Role
 		if role != Primary {
 			res := NewAppendDataResp(ERROR_NOT_PRIMARY)
-			err := sendAppendResult(chunkHandle, token, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
+			err := sendAppendResult(chunkHandle, appendSize, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
 			if err != nil {
 				log.Println("Send Append Result to Master: ", err)
 			}
@@ -226,7 +227,7 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 		res := NewAppendDataResp(ERROR_APPEND_NOT_EXISTS)
 		//newResp := RespMetaData{LastID: newID, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
 		//s.ClientLastResp[token] = newResp
-		err := sendAppendResult(chunkHandle, token, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
+		err := sendAppendResult(chunkHandle, appendSize, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
 		if err != nil {
 			log.Println("Send Append Result to Master: ", err)
 		}
@@ -272,7 +273,7 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	errorCount := Sum(replicateErrors)
 	if errorCount > len(chunkMeta.PeerAddress)/2 {
 		res := NewAppendDataResp(ERROR_APPEND_FAILED)
-		err := sendAppendResult(chunkHandle, token, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
+		err := sendAppendResult(chunkHandle, appendSize, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
 		if err != nil {
 			log.Println("Send Append Result to Master: ", err)
 		}
@@ -296,14 +297,14 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	res := NewAppendDataResp(OK)
 	newResp := RespMetaData{LastID: newID, AppendResp: res, Err: nil}
 	s.ClientLastResp[token] = newResp
-	masterSendErr := sendAppendResult(chunkHandle, token, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
+	masterSendErr := sendAppendResult(chunkHandle, appendSize, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
 	if masterSendErr != nil {
 		log.Println("Send Append Result to Master: ", masterSendErr)
 	}
 	return res, nil
 }
 
-func sendAppendResult(chunkHandle string, clientToken string, status *pb.Status, masterIP string, masterPort uint32, debug bool) error {
+func sendAppendResult(chunkHandle string, size uint32, status *pb.Status, masterIP string, masterPort uint32, debug bool) error {
 	if debug && (masterIP == "" && masterPort == 0) {
 		return nil
 	}
@@ -315,7 +316,7 @@ func sendAppendResult(chunkHandle string, clientToken string, status *pb.Status,
 	peerClient := pb.NewMasterClient(peerConn)
 	appendResult := &pb.AppendResultReq{
 		ChunkHandle: chunkHandle,
-		ClientToken: clientToken,
+		Size:        size,
 		Status:      status,
 	}
 	_, err = peerClient.AppendResult(context.Background(), appendResult)

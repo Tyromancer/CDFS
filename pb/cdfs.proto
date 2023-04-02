@@ -113,7 +113,7 @@ message HeartBeatResp{
 
 message AppendResultReq{
 	string chunkHandle = 1;
-	string clientToken = 2;
+	uint32 size = 2;
 	Status status = 3;
 }
 
