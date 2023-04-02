@@ -75,14 +75,8 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 		return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
-	// file create success, record metadata and return
-	//primaryChunkServer := ""
-	//if createChunkReq.GetRole() != Primary {
-	//	primaryChunkServer = createChunkReq.Primary
-	//}
-
 	// send replicate request to peers
-	// TODO: For Master: when receive error, send deleteCreatedChunk message to all
+	// For Master: when receive error, send deleteCreatedChunk message to all
 	if createChunkReq.GetRole() == Primary {
 		for _, peer := range createChunkReq.GetPeers() {
 			forwardErr := ForwardCreateReq(createChunkReq, peer)
@@ -178,7 +172,7 @@ func (s *ChunkServer) ReadVersion(ctx context.Context, readVersion *pb.ReadVersi
 // Read handles read request from client
 func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadResp, error) {
 	clientToken := readReq.Token
-	//TODO: add version in read response
+	// add version in read response
 	log.Printf("Received read request from: %s\n", clientToken)
 
 	requestedChunkHandle := readReq.ChunkHandle
@@ -332,7 +326,7 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	currentChunkMeta, ok := s.Chunks[chunkHandle]
 
 	if !ok {
-		// TODO: chunk not exist on server, return error message
+		// chunk not exist on server, return error message
 		res := NewReplicateResp(ERROR_REPLICATE_NOT_EXISTS, requestUUID)
 		return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
@@ -345,21 +339,19 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	}
 
 	// role is secondary (backup)
-	// TODO: check version number
+	// check version number
 	currentVersionNumber := currentChunkMeta.Version
 	if currentVersionNumber < dataVersionNumber-1 { // need fetch from primary
-		// TODO: return error (hopefully timer will fetch latest data from primary)
+		// return error (hopefully timer will fetch the latest data from primary)
 		res := NewReplicateResp(ERROR_VERSIONS_DO_NOT_MATCH, requestUUID)
 		return res, errors.New(res.GetStatus().GetErrorMessage())
 	} else if currentVersionNumber == dataVersionNumber-1 { // apply append
-		// TODO: append data to disk
+		// append data to disk
 		chunkContent := replicateReq.GetFileData()
 		err := WriteFile(currentChunkMeta, chunkContent)
 
 		if err != nil { // write failed
 			panic("failed to write to disk")
-			//res := NewReplicateResp(ERROR_REPLICATE_FAILED, requestUUID)
-			//return res, err
 		}
 
 		res := NewReplicateResp(OK, requestUUID)
@@ -457,11 +449,7 @@ func (s *ChunkServer) SendHeartBeat() {
 }
 
 func (s *ChunkServer) SendGetVersion(chunkHandle string) {
-	//metaData, ok := s.Chunks[chunkHandle]
-	//if !ok {
-	//
-	//}
-	// TODO: SendGetVersion
+
 	meta, ok := s.Chunks[chunkHandle]
 	if !ok {
 		log.Println("SendGetVersion: chunk was deleted")
@@ -485,7 +473,7 @@ func (s *ChunkServer) SendGetVersion(chunkHandle string) {
 		log.Printf("Received error for get version: %v", err)
 	}
 
-	// TODO: check status code
+	// check status code
 	statusCode := res.GetStatus().GetStatusCode()
 	switch statusCode {
 	case OK:
