@@ -7,6 +7,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/avast/retry-go"
+	"github.com/google/uuid"
 	pb "github.com/tyromancer/cdfs/pb"
 
 	"google.golang.org/grpc"
@@ -39,6 +41,7 @@ var (
 
 var seqNum = 0 
 
+// Util
 func argsCheck() bool {
 	if *ops == "" {
 		fmt.Println("You should enter operation")
@@ -47,6 +50,20 @@ func argsCheck() bool {
 
 	return true
 }
+
+func genUuid() string{
+	uuid := uuid.New()
+	key := uuid.String()
+	return key 
+}
+
+//TODO: 
+func readUserFile(sourceFile string) ([]byte, error){
+	return []byte("hello world"), nil 
+}
+
+
+// RPC function
 
 func createFile(filename string) {
 	conn, err := grpc.Dial(*ms, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -78,59 +95,90 @@ func deleteFile(filename string) {
 	}
 }
 
-func appendFile(filename string, sourceFile string, fileSize uint64) {
+func appendFile(filename string, data []byte, fileSize uint64) error {
 	conn, err := grpc.Dial(*ms, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+		log.Fatalf("[%v] connect error: %v", "master", err)
+		return err 
 	}
 	defer conn.Close()
 	masterConn := pb.NewMasterClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	res, err := masterConn.AppendFile(ctx, &pb.AppendFileReq{})
-	if err != nil || res.GetStatus().GetStatusCode() != 0 {
-		log.Fatalf("append file error:  %v %v", res, err)
+	reg, err := masterConn.GetToken(ctx, &pb.GetTokenReq{})
+	if err != nil {
+		log.Fatalf("[%v] client register error: %v","master", err)
+		return err 
 	}
-	primaryIp := res.GetPrimaryIP()
-	chunkHandle := res.GetChunkHandle()
-	data := []byte("hello world") // TODO
-	for i := 0; i < len(chunkHandle); i++ {
-		if !appendToChunk(seqNum, primaryIp[i], chunkHandle[i], data) {
-			log.Fatalf("append to chunk error:  %v %v", res, err)
-		}else{
-			seqNum += 1
+	uuid := genUuid()
+	appendReq := pb.AppendFileReq{
+		FileName: filename,
+		FileSize: uint32(fileSize),
+		Uuid: uuid,
+	}
+	res, err := masterConn.AppendFile(ctx, &appendReq)
+	if err != nil || res.GetStatus().GetStatusCode() != 0 {
+		log.Fatalf("master append file error:  %v %v", res, err)
+		return err 
+	}
+	primaryIps := res.GetPrimaryIP()
+	chunkHandles := res.GetChunkHandle()
+	
+	chunckCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	successChan := make(chan int, len(chunkHandles))
+	defer close(successChan)
+	failChan := make(chan error, len(chunkHandles))
+	defer close(failChan)
+	for i:= 0; i< len(chunkHandles); i++{
+		curData := data[i*int(ChunkSize): (i+1) * int(ChunkSize)]
+		go appendToChunk(chunckCtx, primaryIps[i], chunkHandles[i], curData, reg.GetUniqueToken(), successChan, failChan)
+	}	
+	count := 0
+	for{
+		select{
+		case  err := <- failChan:
+			fmt.Printf("append to chunk fail")
+			cancel()
+			return err 
+		case <- successChan:
+			count += 1
+			if(count == len(chunkHandles)){
+				return nil 
+			}
+		case <- time.After(5 * time.Second):
+			fmt.Printf("append to chunk fail")
+			cancel()
+			return fmt.Errorf("chunk server timeout")
 		}
 	}
-	fmt.Println("success")
 }
 
-func appendToChunk(seqNum int, primaryIp string, chunkHandle string, data []byte) bool {
+func appendToChunk(ctx context.Context, primaryIp string, chunkHandle string, data []byte, token string, successChan chan int, failChan chan error) {
 	// Create chunk server client to talk to chunk server
 	var csConn *grpc.ClientConn
 	csConn, err := grpc.Dial(primaryIp, grpc.WithInsecure())
-
 	if err != nil {
 		log.Fatalf("Failed to connect to chunk server")
-		return false
+		failChan <- err 
+		return 
 	}
 
 	appendDataReq := &pb.AppendDataReq{
-		SeqNum:      uint32(seqNum),
 		ChunkHandle: chunkHandle,
 		FileData:    data,
-		Token:       "Client#1", //TODO
+		Token:       token, 
+		Uuid: genUuid(),
 	}
 	csClient := pb.NewChunkServerClient(csConn)
-	appendDataRes, err := csClient.AppendData(context.Background(), appendDataReq)
+	appendDataRes, err := csClient.AppendData(ctx, appendDataReq)
 	if err != nil || appendDataRes.GetStatus().GetStatusCode() != 0 {
 		log.Fatalf("Error when calling append data: %v", err)
-		return false
+		failChan <- err
 	}
-
-	return true
+	successChan <- 0
 }
 
-// TODO 
 func readFile(filename string, offset uint64) ([]byte, error) {
 	conn, err := grpc.Dial(*ms, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -164,6 +212,7 @@ func readFile(filename string, offset uint64) ([]byte, error) {
 	return nil, nil
 }
 
+// Main function 
 func main() {
 	flag.Parse()
 	if !argsCheck() {
@@ -175,7 +224,24 @@ func main() {
 	case "delete":
 		deleteFile(*filename)
 	case "append":
-		appendFile(*filename, *source, *filesize)
+		data, err := readUserFile(*source)
+		if err != nil{
+			fmt.Printf("Read file error: %v", err)
+			return 
+		}
+		err = retry.Do(
+			func () error{
+				return appendFile(*filename, data, *filesize)
+			},
+			retry.DelayType(retry.FixedDelay), 
+			retry.Delay(time.Second), 
+			retry.Attempts(3),
+		)
+		if err != nil{
+			fmt.Println("Fail")
+		}else{
+			fmt.Println("success")
+		}
 	case "read":
 		res, err := readFile(*filename, *offset)
 		if err != nil {
