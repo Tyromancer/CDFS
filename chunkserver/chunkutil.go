@@ -68,6 +68,12 @@ func ErrorCodeToString(e int32) string {
 	}
 }
 
+type DebugInfo struct {
+	Addr       string
+	Func       string
+	StatusCode int32
+}
+
 type ChunkMetaData struct {
 	// file location in local file system
 	ChunkLocation string
@@ -307,4 +313,8 @@ func Sum[T Number](slice []T) T {
 		result += v
 	}
 	return result
+}
+
+func GetAddr(host string, port uint32) string {
+	return fmt.Sprintf("%s:%d", host, port)
 }
