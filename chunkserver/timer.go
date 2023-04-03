@@ -32,8 +32,7 @@ func (t *GetVersionTimer) Trigger() {
 		case <-t.Quit:
 			return
 		default:
-			//TODO: default: send GetVersionReq
-
+			// default: send GetVersionReq
 			t.Srv.SendGetVersion(t.ChunkHandle)
 		}
 	}

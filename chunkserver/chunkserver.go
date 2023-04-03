@@ -2,7 +2,6 @@ package chunkserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"path"
@@ -72,7 +71,8 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	_, ok := s.Chunks[chunkHandle]
 	if ok {
 		res := NewCreateChunkResp(ERROR_CHUNK_ALREADY_EXISTS)
-		return res, errors.New(res.GetStatus().ErrorMessage)
+		//return res, errors.New(res.GetStatus().ErrorMessage)
+		return res, nil
 	}
 
 	// send replicate request to peers
@@ -83,7 +83,8 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 			if forwardErr != nil {
 				// abort create process and return error message
 				res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
-				return res, forwardErr
+				return res, nil
+				//return res, forwardErr
 			}
 		}
 	}
@@ -94,7 +95,8 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	err := CreateFile(chunkLocation)
 	if err != nil {
 		res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
-		return res, err
+		return res, nil
+		//return res, err
 	}
 
 	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0, Version: 0}
@@ -111,14 +113,16 @@ func (s *ChunkServer) ForwardCreate(ctx context.Context, forwardCreateReq *pb.Fo
 	_, ok := s.Chunks[chunkHandle]
 	if ok {
 		res := NewForwardCreateResp(ERROR_CHUNK_ALREADY_EXISTS)
-		return res, errors.New(res.GetStatus().ErrorMessage)
+		return res, nil
+		//return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
 	chunkLocation := path.Join(s.BasePath, chunkHandle)
 	err := CreateFile(chunkLocation)
 	if err != nil {
 		res := NewForwardCreateResp(ERROR_CREATE_CHUNK_FAILED)
-		return res, err
+		return res, nil
+		//return res, err
 	}
 	newChannel := make(chan string)
 	newTimer := GetVersionTimer{
@@ -161,7 +165,8 @@ func (s *ChunkServer) ReadVersion(ctx context.Context, readVersion *pb.ReadVersi
 	meta, ok := s.Chunks[chunkHandle]
 	if !ok {
 		res := NewReadVersionResp(ERROR_CHUNK_NOT_EXISTS, nil)
-		return res, errors.New(res.GetStatus().GetErrorMessage())
+		return res, nil
+		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	versionNum := meta.Version
@@ -187,7 +192,8 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 		if err != nil {
 			log.Printf("Failed to read chunk at %s with error %v\n", chunkContent, err)
 			errorCode := ERROR_READ_FAILED
-			return NewReadResp(nil, errorCode, nil), err
+			return NewReadResp(nil, errorCode, nil), nil
+			//return NewReadResp(nil, errorCode, nil), err
 		}
 
 		// if the read was successful, return the chunk content with ok status and nil version number
@@ -196,7 +202,8 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 	} else {
 		// this chunk server either is not primary or does not have the requested chunk
 		res := NewReadResp(nil, ERROR_READ_FAILED, nil)
-		return res, errors.New(res.GetStatus().ErrorMessage)
+		return res, nil
+		//return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 }
 
@@ -214,18 +221,24 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 			if err != nil {
 				log.Println("Send Append Result to Master: ", err)
 			}
-			return res, errors.New(res.GetStatus().ErrorMessage)
+			return res, nil
+			//return res, errors.New(res.GetStatus().ErrorMessage)
 		}
 	} else {
 		//if chunk not exist
 		res := NewAppendDataResp(ERROR_APPEND_NOT_EXISTS)
+		//res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: ERROR_APPEND_NOT_EXISTS, ErrorMessage: ErrorCodeToString(ERROR_APPEND_NOT_EXISTS)}}
+
 		//newResp := RespMetaData{LastID: newID, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
 		//s.ClientLastResp[token] = newResp
 		err := sendAppendResult(chunkHandle, appendSize, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
 		if err != nil {
 			log.Println("Send Append Result to Master: ", err)
 		}
-		return res, errors.New(res.GetStatus().ErrorMessage)
+
+		return res, nil
+		//return res, status.Errorf(codes.NotFound, "append not exists")
+		//return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
 	// chunk exist and current chunk server is the primary of target chunk handle
@@ -271,7 +284,8 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 		if err != nil {
 			log.Println("Send Append Result to Master: ", err)
 		}
-		return res, errors.New(res.GetStatus().GetErrorMessage())
+		return res, nil
+		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	err := WriteFile(chunkMeta, fileData)
@@ -328,14 +342,16 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	if !ok {
 		// chunk not exist on server, return error message
 		res := NewReplicateResp(ERROR_REPLICATE_NOT_EXISTS, requestUUID)
-		return res, errors.New(res.GetStatus().GetErrorMessage())
+		return res, nil
+		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	// chunk exists on this server, check role
 	currentRole := currentChunkMeta.Role
 	if currentRole != Secondary {
 		res := NewReplicateResp(ERROR_NOT_SECONDARY, requestUUID)
-		return res, errors.New(res.GetStatus().GetErrorMessage())
+		return res, nil
+		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	// role is secondary (backup)
@@ -344,7 +360,8 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	if currentVersionNumber < dataVersionNumber-1 { // need fetch from primary
 		// return error (hopefully timer will fetch the latest data from primary)
 		res := NewReplicateResp(ERROR_VERSIONS_DO_NOT_MATCH, requestUUID)
-		return res, errors.New(res.GetStatus().GetErrorMessage())
+		return res, nil
+		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	} else if currentVersionNumber == dataVersionNumber-1 { // apply append
 		// append data to disk
 		chunkContent := replicateReq.GetFileData()
@@ -367,7 +384,8 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 
 	// return error
 	res := NewReplicateResp(ERROR_SHOULD_NOT_HAPPEN, requestUUID)
-	return res, errors.New(res.GetStatus().GetErrorMessage())
+	return res, nil
+	//return res, errors.New(res.GetStatus().GetErrorMessage())
 }
 
 func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (res *pb.GetVersionResp, err error) {
@@ -388,7 +406,8 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 	if !ok {
 		// indicate chunk was deleted
 		res := NewGetVersionResp(ERROR_CHUNK_NOT_EXISTS, nil, nil)
-		return res, errors.New(res.GetStatus().GetErrorMessage())
+		return res, nil
+		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	meta.MetaDataLock.Lock()
@@ -398,7 +417,8 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 	role := meta.Role
 	if role != Primary {
 		res := NewGetVersionResp(ERROR_NOT_PRIMARY, nil, nil)
-		return res, errors.New(res.GetStatus().GetErrorMessage())
+		return res, nil
+		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	// check version
@@ -413,9 +433,13 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 	chunkData, err := LoadChunk(chunkHandle, 0, 0)
 	if err != nil {
 		res := NewGetVersionResp(ERROR_READ_FAILED, nil, nil)
-		return res, err
+		return res, nil
+		//return res, err
+
 	}
-	return NewGetVersionResp(ERROR_VERSIONS_DO_NOT_MATCH, &currentVersion, chunkData), errors.New(ErrorCodeToString(ERROR_VERSIONS_DO_NOT_MATCH))
+	return NewGetVersionResp(ERROR_VERSIONS_DO_NOT_MATCH, &currentVersion, chunkData), nil
+
+	//return NewGetVersionResp(ERROR_VERSIONS_DO_NOT_MATCH, &currentVersion, chunkData), errors.New(ErrorCodeToString(ERROR_VERSIONS_DO_NOT_MATCH))
 }
 
 func (s *ChunkServer) SendHeartBeat() {
@@ -468,9 +492,9 @@ func (s *ChunkServer) SendGetVersion(chunkHandle string) {
 	}
 
 	res, err := primary.GetVersion(context.Background(), req)
-
-	if err != nil {
-		log.Printf("Received error for get version: %v", err)
+	resStatusCode := res.GetStatus().GetStatusCode()
+	if err != nil || (resStatusCode != ERROR_VERSIONS_DO_NOT_MATCH && resStatusCode != OK) {
+		log.Printf("Received error for get version: %s", res.GetStatus().GetErrorMessage())
 	}
 
 	// check status code

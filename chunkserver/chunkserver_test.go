@@ -15,6 +15,33 @@ import (
 	"time"
 )
 
+type BuildChunkServerConfig struct {
+	PrimaryPort uint32
+	Backup1Port uint32
+	Backup2Port uint32
+
+	MasterHost string
+	MasterPort uint32
+}
+
+func BuildAndRunThreeChunkServers(t *testing.T, config *BuildChunkServerConfig) (p *ChunkServer, b1 *ChunkServer, b2 *ChunkServer, debugChan chan DebugInfo) {
+	primaryPort := config.PrimaryPort
+	backupPort1 := config.Backup1Port
+	backupPort2 := config.Backup2Port
+
+	primaryBasePath, backupBasePath1, backupBasePath2 := t.TempDir(), t.TempDir(), t.TempDir()
+
+	debugChan = make(chan DebugInfo)
+	p = buildChunkServer(t, primaryPort, config.MasterHost, config.MasterPort, primaryBasePath, debugChan)
+	b1 = buildChunkServer(t, backupPort1, config.MasterHost, config.MasterPort, backupBasePath1, debugChan)
+	b2 = buildChunkServer(t, backupPort2, config.MasterHost, config.MasterPort, backupBasePath2, debugChan)
+
+	go startChunkServer(t, p)
+	go startChunkServer(t, b1)
+	go startChunkServer(t, b2)
+	return
+}
+
 func NewChunkServerInstance(t *testing.T, port uint32, msHost string, msPort uint32, basePath string) {
 	t.Log("Create New Chunk Server")
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -148,27 +175,22 @@ func TestClientReadInvalidRead(t *testing.T) {
 // TestCreateValidChunk tests the ChunkServer behavior on creating a valid chunk via the Create RPC
 func TestCreateValidChunkWithReplication(t *testing.T) {
 	t.Log("Running TestCreateValidChunk...")
-	primaryAddr, primaryPort := "localhost", uint32(12345)
-	backupAddr1, backupPort1 := "localhost", uint32(12346)
-	backupAddr2, backupPort2 := "localhost", uint32(12347)
+	p, b1, b2, debugChan := BuildAndRunThreeChunkServers(t, &BuildChunkServerConfig{
+		PrimaryPort: 12345,
+		Backup1Port: 12346,
+		Backup2Port: 12347,
+		MasterHost:  "",
+		MasterPort:  0,
+	})
+	defer close(debugChan)
 
-	primaryBasePath, backupBasePath1, backupBasePath2 := t.TempDir(), t.TempDir(), t.TempDir()
-
-	debugChan := make(chan DebugInfo)
-	primary := buildChunkServer(t, primaryPort, "", 0, primaryBasePath, debugChan)
-	backup1 := buildChunkServer(t, backupPort1, "", 0, backupBasePath1, debugChan)
-	backup2 := buildChunkServer(t, backupPort2, "", 0, backupBasePath2, debugChan)
-
-	go startChunkServer(t, primary)
-	go startChunkServer(t, backup1)
-	go startChunkServer(t, backup2)
 	time.Sleep(time.Duration(100) * time.Millisecond)
 
 	// send create rpc to primary
 	chunkHandle := "chunk#1"
 	role := Primary
 
-	primaryConn, err := NewPeerConn(GetAddr(primaryAddr, primaryPort))
+	primaryConn, err := NewPeerConn(p.ServerName)
 	if err != nil {
 		t.Errorf("failed to connect to primary goroutine: %v", err)
 	}
@@ -176,8 +198,8 @@ func TestCreateValidChunkWithReplication(t *testing.T) {
 	req := &pb.CreateChunkReq{
 		ChunkHandle: chunkHandle,
 		Role:        uint32(role),
-		Primary:     GetAddr(primaryAddr, primaryPort),
-		Peers:       []string{GetAddr(backupAddr1, backupPort1), GetAddr(backupAddr2, backupPort2)},
+		Primary:     p.ServerName,
+		Peers:       []string{b1.ServerName, b2.ServerName},
 	}
 
 	primaryCS := pb.NewChunkServerClient(primaryConn)
@@ -191,7 +213,7 @@ func TestCreateValidChunkWithReplication(t *testing.T) {
 	for counter < 2 {
 		select {
 		case info := <-debugChan:
-			if strings.Compare("GetVersion", info.Func) == 0 && strings.Compare(info.Addr, primary.ServerName) == 0 {
+			if strings.Compare("GetVersion", info.Func) == 0 && strings.Compare(info.Addr, p.ServerName) == 0 {
 				counter += 1
 				t.Logf("Got debug info: Addr: %s, Func: %s, StatusCode: %d", info.Addr, info.Func, info.StatusCode)
 			} else {
@@ -200,7 +222,7 @@ func TestCreateValidChunkWithReplication(t *testing.T) {
 		}
 	}
 
-	primaryExists, backupExists1, backupExists2 := checkFileExists(primaryBasePath+"/"+chunkHandle), checkFileExists(backupBasePath1+"/"+chunkHandle), checkFileExists(backupBasePath2+"/"+chunkHandle)
+	primaryExists, backupExists1, backupExists2 := checkFileExists(p.BasePath+"/"+chunkHandle), checkFileExists(b1.BasePath+"/"+chunkHandle), checkFileExists(b2.BasePath+"/"+chunkHandle)
 	if !primaryExists {
 		t.Errorf("primary chunk file does not exist")
 	} else if !backupExists1 {
@@ -232,27 +254,25 @@ func TestCreateDuplicateChunk(t *testing.T) {
 	}
 
 	res, err = primary.CreateChunk(context.Background(), req)
-	if err == nil || res.GetStatus().GetStatusCode() != ERROR_CHUNK_ALREADY_EXISTS {
+	if err != nil {
+		t.Errorf("connection failure: %v", err)
+	}
+	if res.GetStatus().GetStatusCode() != ERROR_CHUNK_ALREADY_EXISTS {
 		t.Errorf("expected chunk already exists, got: %s", res.GetStatus().GetErrorMessage())
 	}
 }
 
-func TestValidAppend(t *testing.T) {
+func TestAppend(t *testing.T) {
 	t.Log("Running TestValidAppend...")
-	primaryAddr, primaryPort := "localhost", uint32(12345)
-	backupAddr1, backupPort1 := "localhost", uint32(12346)
-	backupAddr2, backupPort2 := "localhost", uint32(12347)
-
-	primaryBasePath, backupBasePath1, backupBasePath2 := t.TempDir(), t.TempDir(), t.TempDir()
-
-	debugChan := make(chan DebugInfo)
-	primary := buildChunkServer(t, primaryPort, "", 0, primaryBasePath, debugChan)
-	backup1 := buildChunkServer(t, backupPort1, "", 0, backupBasePath1, debugChan)
-	backup2 := buildChunkServer(t, backupPort2, "", 0, backupBasePath2, debugChan)
-
-	go startChunkServer(t, primary)
-	go startChunkServer(t, backup1)
-	go startChunkServer(t, backup2)
+	ctx := context.Background()
+	p, b1, b2, debugChan := BuildAndRunThreeChunkServers(t, &BuildChunkServerConfig{
+		PrimaryPort: 12345,
+		Backup1Port: 12346,
+		Backup2Port: 12347,
+		MasterHost:  "",
+		MasterPort:  0,
+	})
+	defer close(debugChan)
 
 	time.Sleep(time.Duration(100) * time.Millisecond)
 
@@ -260,20 +280,21 @@ func TestValidAppend(t *testing.T) {
 	chunkHandle := "chunk#1"
 	role := Primary
 
-	primaryConn, err := NewPeerConn(GetAddr(primaryAddr, primaryPort))
+	primaryConn, err := NewPeerConn(p.ServerName)
 	if err != nil {
 		t.Errorf("failed to connect to primary goroutine: %v", err)
 	}
+	defer primaryConn.Close()
 
 	req := &pb.CreateChunkReq{
 		ChunkHandle: chunkHandle,
 		Role:        uint32(role),
-		Primary:     GetAddr(primaryAddr, primaryPort),
-		Peers:       []string{GetAddr(backupAddr1, backupPort1), GetAddr(backupAddr2, backupPort2)},
+		Primary:     p.ServerName,
+		Peers:       []string{b1.ServerName, b2.ServerName},
 	}
 
 	primaryCS := pb.NewChunkServerClient(primaryConn)
-	res, err := primaryCS.CreateChunk(context.Background(), req)
+	res, err := primaryCS.CreateChunk(ctx, req)
 	if err != nil || res.GetStatus().GetStatusCode() != OK {
 		t.Errorf("failed to create chunk: %v", err)
 	}
@@ -286,20 +307,79 @@ func TestValidAppend(t *testing.T) {
 		Uuid:        appendReqID.String(),
 	}
 
-	appendRes, err := primaryCS.AppendData(context.Background(), appendReq)
+	appendRes, err := primaryCS.AppendData(ctx, appendReq)
 	if err != nil || appendRes.GetStatus().GetStatusCode() != OK {
 		t.Errorf("failed to append to primary CS: %v", err)
 	}
 
 	// check chunk version of all three replicas
-	primaryVersion := primary.Chunks[chunkHandle].Version
-	backup1Version := backup1.Chunks[chunkHandle].Version
-	backup2Version := backup2.Chunks[chunkHandle].Version
+	primaryVersion := p.Chunks[chunkHandle].Version
+	backup1Version := b1.Chunks[chunkHandle].Version
+	backup2Version := b2.Chunks[chunkHandle].Version
 
 	t.Logf("primary version: %d, backup1 version: %d, backup2 version: %d", primaryVersion, backup1Version, backup2Version)
 
 	if primaryVersion != backup1Version || primaryVersion != backup2Version || backup1Version != backup2Version {
 		t.Errorf("versions differ, got primary %d, backup1 %d, backup2 %d", primaryVersion, backup1Version, backup2Version)
+	}
+
+	// append again (mock duplicate request)
+	appendRes, err = primaryCS.AppendData(ctx, appendReq)
+	if err != nil || appendRes.GetStatus().GetStatusCode() != OK {
+		t.Errorf("expected duplicated last successful append operation to return OK, got %s", appendRes.GetStatus().GetErrorMessage())
+	}
+
+	dupPrimaryVersion := p.Chunks[chunkHandle].Version
+	if dupPrimaryVersion != primaryVersion {
+		t.Errorf("duplicate append changed chunk version from %d to %d", primaryVersion, dupPrimaryVersion)
+	}
+
+	// append to non-existing chunk
+	ctx1, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	uuidNonExistent := uuid.New()
+	reqNonExistent := &pb.AppendDataReq{
+		ChunkHandle: "chunk#Invalid",
+		FileData:    []byte("invalid chunk"),
+		Token:       "client#1",
+		Uuid:        uuidNonExistent.String(),
+	}
+
+	appendRes2, err := primaryCS.AppendData(ctx1, reqNonExistent)
+	if err != nil {
+		t.Errorf("connection failure: %v", err)
+	}
+	if appendRes2.GetStatus().GetStatusCode() != ERROR_APPEND_NOT_EXISTS {
+		t.Errorf("expected error append not exists, got %s", appendRes2.GetStatus().GetErrorMessage())
+	}
+
+	_, ok := p.Chunks["chunk#Invalid"]
+	if ok {
+		t.Errorf("append to invalid chunk handle unexpectedly recorded by primary chunk server")
+	}
+
+	// append to backup
+	appendReqID2 := uuid.New()
+	appendReq2 := &pb.AppendDataReq{
+		ChunkHandle: chunkHandle,
+		FileData:    []byte("appendDataChunkTest2"),
+		Token:       "client#1",
+		Uuid:        appendReqID2.String(),
+	}
+
+	backupConn1, err := NewPeerConn(b1.ServerName)
+	if err != nil {
+		t.Errorf("failed to connect to backup1 goroutine: %v", err)
+	}
+	defer backupConn1.Close()
+
+	backupCS := pb.NewChunkServerClient(backupConn1)
+	backupRes, err := backupCS.AppendData(ctx, appendReq2)
+	if err != nil {
+		t.Errorf("connection failure")
+	}
+	if backupRes.GetStatus().GetStatusCode() != ERROR_NOT_PRIMARY {
+		t.Errorf("expected error not primary, got %s", backupRes.GetStatus().GetErrorMessage())
 	}
 }
 
