@@ -39,8 +39,6 @@ var (
 	target   = flag.String("target", defaultTarget, "target file to store data")
 )
 
-var seqNum = 0
-
 // Util
 func argsCheck() bool {
 	if *ops == "" {
