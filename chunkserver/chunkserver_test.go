@@ -45,7 +45,7 @@ func BuildAndRunThreeChunkServers(t *testing.T, config *BuildChunkServerConfig) 
 	backupPort1 := config.Backup1Port
 	backupPort2 := config.Backup2Port
 
-	primaryBasePath, backupBasePath1, backupBasePath2 := t.TempDir(), t.TempDir(), t.TempDir()
+	primaryBasePath, backupBasePath1, backupBasePath2 := "/CDFS", t.TempDir(), t.TempDir()
 
 	debugChan = make(chan DebugInfo)
 	p = buildChunkServer(t, primaryPort, config.MasterHost, config.MasterPort, primaryBasePath, debugChan)
@@ -513,9 +513,10 @@ func TestRead(t *testing.T) {
 
 	// append to chunk
 	appendReqID := uuid.New()
+	appendData := []byte("appendDataChunkTest")
 	appendReq := &pb.AppendDataReq{
 		ChunkHandle: chunkHandle,
-		FileData:    []byte("appendDataChunkTest"),
+		FileData:    appendData,
 		Token:       "client#1",
 		Uuid:        appendReqID.String(),
 	}
@@ -574,11 +575,33 @@ func TestRead(t *testing.T) {
 	readData1 := readResp1.GetFileData()
 	readData2 := readResp2.GetFileData()
 
-	if !bytes.Equal(readData, readData1) || !bytes.Equal(readData1, readData2) {
+	if !bytes.Equal(readData, readData1) || !bytes.Equal(readData1, readData2) || !bytes.Equal(readData2, appendData) {
 		t.Errorf("Read Data from 3 Chunk Server do not match")
 	}
 
-	t.Log("Finish TestRead...")
+	start := len(appendData) / 2
+
+	readOffsetReq := &pb.ReadReq{
+		ChunkHandle: chunkHandle,
+		Token:       "client#1",
+		Start:       uint32(start),
+		End:         0,
+	}
+
+	readOffsetResp, err := primaryCS.Read(ctx, readOffsetReq)
+	CheckError(t, readOffsetResp, err, OK)
+	readOffsetResp1, err := b1CS.Read(ctx, readOffsetReq)
+	CheckError(t, readOffsetResp1, err, OK)
+	readOffsetResp2, err := b2CS.Read(ctx, readOffsetReq)
+	CheckError(t, readOffsetResp2, err, OK)
+
+	readOffsetData := readOffsetResp.GetFileData()
+	readOffsetData1 := readOffsetResp1.GetFileData()
+	readOffsetData2 := readOffsetResp2.GetFileData()
+
+	if !bytes.Equal(readOffsetData, readOffsetData1) || !bytes.Equal(readOffsetData1, readOffsetData2) || !bytes.Equal(readOffsetData2, appendData[start:]) {
+		t.Errorf("Read Offset Data from 3 Chunk Server do not match")
+	}
 }
 
 //func TestAppendToNonExistingChunk(t *testing.T) {

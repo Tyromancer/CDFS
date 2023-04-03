@@ -91,7 +91,8 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 
 	// create file on disk
 	// chunkLocation := fmt.Sprintf("/cdfs/%s/%s", s.ServerName, chunkHandle)
-	chunkLocation := path.Join(s.BasePath, chunkHandle)
+	// chunkLocation := path.Join(s.BasePath, chunkHandle)
+	chunkLocation := s.BasePath + "/" + chunkHandle
 	err := CreateFile(chunkLocation)
 	if err != nil {
 		res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
@@ -187,7 +188,7 @@ func (s *ChunkServer) Read(ctx context.Context, readReq *pb.ReadReq) (*pb.ReadRe
 	metadata, ok := s.Chunks[requestedChunkHandle]
 
 	if ok {
-		chunkContent, err := LoadChunk(metadata.ChunkLocation, readStart, readEnd)
+		chunkContent, err := LoadChunk(metadata.ChunkLocation, metadata.Used, readStart, readEnd)
 
 		// if the read failed, return an invalid read response with error message and nil version number
 		if err != nil {
@@ -433,7 +434,7 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 
 	// versions don't match: send file content back to caller
 	// fetch real chunk data and set fileData field
-	chunkData, err := LoadChunk(chunkHandle, 0, 0)
+	chunkData, err := LoadChunk(chunkHandle, meta.Used, 0, 0)
 	if err != nil {
 		res := NewGetVersionResp(ERROR_READ_FAILED, nil, nil)
 		return res, nil
