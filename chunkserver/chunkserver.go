@@ -401,7 +401,9 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 				Func:       "GetVersion",
 				StatusCode: res.GetStatus().GetStatusCode(),
 			}
-			s.DebugChan <- debugInfo
+			if s.DebugChan != nil && !IsClose(s.DebugChan) {
+				s.DebugChan <- debugInfo
+			}
 		}
 	}()
 	if !ok {
