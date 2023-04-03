@@ -24,6 +24,21 @@ type BuildChunkServerConfig struct {
 	MasterPort uint32
 }
 
+type WithStatus interface {
+	GetStatus() *pb.Status
+}
+
+func CheckError(t *testing.T, msg WithStatus, err error, expected int32) {
+	if err != nil {
+		t.Errorf("connection error %v", err)
+	}
+
+	errorCode := msg.GetStatus().GetStatusCode()
+	if errorCode != expected {
+		t.Errorf("expected %s, got %s", ErrorCodeToString(expected), msg.GetStatus().GetErrorMessage())
+	}
+}
+
 func BuildAndRunThreeChunkServers(t *testing.T, config *BuildChunkServerConfig) (p *ChunkServer, b1 *ChunkServer, b2 *ChunkServer, debugChan chan DebugInfo) {
 	primaryPort := config.PrimaryPort
 	backupPort1 := config.Backup1Port
@@ -380,6 +395,80 @@ func TestAppend(t *testing.T) {
 	}
 	if backupRes.GetStatus().GetStatusCode() != ERROR_NOT_PRIMARY {
 		t.Errorf("expected error not primary, got %s", backupRes.GetStatus().GetErrorMessage())
+	}
+}
+
+func TestDelete(t *testing.T) {
+	t.Log("Running TestValidAppend...")
+	ctx := context.Background()
+	p, b1, b2, debugChan := BuildAndRunThreeChunkServers(t, &BuildChunkServerConfig{
+		PrimaryPort: 12345,
+		Backup1Port: 12346,
+		Backup2Port: 12347,
+		MasterHost:  "",
+		MasterPort:  0,
+	})
+	defer close(debugChan)
+
+	time.Sleep(time.Duration(100) * time.Millisecond)
+
+	// create a chunk
+	chunkHandle := "chunk#1"
+	role := Primary
+
+	primaryConn, err := NewPeerConn(p.ServerName)
+	if err != nil {
+		t.Errorf("failed to connect to primary goroutine: %v", err)
+	}
+
+	req := &pb.CreateChunkReq{
+		ChunkHandle: chunkHandle,
+		Role:        uint32(role),
+		Primary:     p.ServerName,
+		Peers:       []string{b1.ServerName, b2.ServerName},
+	}
+
+	primaryCS := pb.NewChunkServerClient(primaryConn)
+	res, err := primaryCS.CreateChunk(context.Background(), req)
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		t.Errorf("failed to create chunk: %v", err)
+	}
+
+	// delete chunk from all three chunk servers
+	b1Conn, err := NewPeerConn(b1.ServerName)
+	if err != nil {
+		t.Errorf("failed to connect to backup1 goroutine: %v", err)
+	}
+	defer b1Conn.Close()
+
+	b2Conn, err := NewPeerConn(b2.ServerName)
+	if err != nil {
+		t.Errorf("failed to connect to backup2 goroutine: %v", err)
+	}
+	defer b2Conn.Close()
+
+	b1CS := pb.NewChunkServerClient(b1Conn)
+	b2CS := pb.NewChunkServerClient(b2Conn)
+
+	delReq := &pb.DeleteChunkReq{ChunkHandle: chunkHandle}
+	deleteRes, err := primaryCS.DeleteChunk(ctx, delReq)
+	CheckError(t, deleteRes, err, OK)
+
+	deleteRes1, err := b1CS.DeleteChunk(ctx, delReq)
+	CheckError(t, deleteRes1, err, OK)
+
+	deleteRes2, err := b2CS.DeleteChunk(ctx, delReq)
+	CheckError(t, deleteRes2, err, OK)
+
+	// check if metadata is recorded in chunk servers
+	if _, ok := p.Chunks[chunkHandle]; ok {
+		t.Errorf("chunk metadata still in primary")
+	}
+	if _, ok := b1.Chunks[chunkHandle]; ok {
+		t.Errorf("chunk metadata still in backup1")
+	}
+	if _, ok := b2.Chunks[chunkHandle]; ok {
+		t.Errorf("chunk metadata still in backup2")
 	}
 }
 

@@ -99,7 +99,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 		//return res, err
 	}
 
-	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0, Version: 0}
+	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0, Version: 0, GetVersionChannel: nil}
 	s.Chunks[chunkHandle] = &metadata
 
 	return NewCreateChunkResp(OK), nil
@@ -125,6 +125,7 @@ func (s *ChunkServer) ForwardCreate(ctx context.Context, forwardCreateReq *pb.Fo
 		//return res, err
 	}
 	newChannel := make(chan string)
+	log.Println("creating get version channel")
 	newTimer := GetVersionTimer{
 		Srv:         s,
 		ChunkHandle: forwardCreateReq.GetChunkHandle(),
@@ -146,7 +147,7 @@ func (s *ChunkServer) DeleteChunk(ctx context.Context, deleteReq *pb.DeleteChunk
 	chunkHandle := deleteReq.GetChunkHandle()
 	metaData, ok := s.Chunks[chunkHandle]
 	if ok {
-		if !IsClose(metaData.GetVersionChannel) || metaData.GetVersionChannel == nil {
+		if metaData.GetVersionChannel != nil && !IsClose(metaData.GetVersionChannel) {
 			close(metaData.GetVersionChannel)
 			metaData.GetVersionChannel = nil
 		}
