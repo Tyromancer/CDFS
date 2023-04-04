@@ -61,22 +61,22 @@ func genUuid() string {
 
 func readUserFile(sourceFile string) ([][]byte, int64, error) {
 	fi, err := os.Stat(sourceFile)
-	if err != nil{
-		return nil, 0, err 
+	if err != nil {
+		return nil, 0, err
 	}
 	size := fi.Size()
 	// data := make([][]byte, (size+int64(ChunkSize)-1)/int64(ChunkSize))
 	var data [][]byte
 	f, err := os.Open(sourceFile)
-	if err != nil{
+	if err != nil {
 		return nil, 0, err
 	}
 	defer f.Close()
 	buf := make([]byte, ChunkSize)
 	for {
 		l, err := f.Read(buf)
-		if err != nil{
-			if err == io.EOF{
+		if err != nil {
+			if err == io.EOF {
 				break
 			}
 			return nil, 0, err
@@ -86,22 +86,21 @@ func readUserFile(sourceFile string) ([][]byte, int64, error) {
 	return data, size, nil
 }
 
-func writeUserFile(targetPath string, data[]byte) error{
-	f, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE | os.O_APPEND, 0666)
-	if err != nil{
-		return err 
+func writeUserFile(targetPath string, data []byte) error {
+	f, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return err
 	}
 	defer f.Close()
 	writer := bufio.NewWriter(f)
-	if _, err = writer.Write(data); err != nil{
+	if _, err = writer.Write(data); err != nil {
 		return err
 	}
-	if err = writer.Flush(); err != nil{
+	if err = writer.Flush(); err != nil {
 		return err
 	}
-	return nil 
+	return nil
 }
-
 
 // RPC function
 
@@ -385,7 +384,7 @@ func main() {
 	case "delete":
 		deleteFile(*filename)
 	case "append":
-		data, size,  err := readUserFile(*source)
+		data, size, err := readUserFile(*source)
 		if err != nil {
 			fmt.Errorf("Read file error: %v", err)
 			return
@@ -412,7 +411,7 @@ func main() {
 		if *target == "" {
 			fmt.Println(string(data))
 		} else {
-			if err := writeUserFile(*target, data); err != nil{
+			if err := writeUserFile(*target, data); err != nil {
 				fmt.Errorf("Write data to path error %v", err)
 			}
 		}
