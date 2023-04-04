@@ -4,7 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"math"
+	"os"
 	"time"
 
 	"github.com/avast/retry-go"
@@ -55,9 +58,30 @@ func genUuid() string {
 	return key
 }
 
-// TODO:
-func readUserFile(sourceFile string) ([]byte, error) {
-	return []byte("hello world"), nil
+func readUserFile(sourceFile string) ([][]byte, int64, error) {
+	fi, err := os.Stat(sourceFile)
+	if err != nil{
+		return nil, 0, err 
+	}
+	size := fi.Size()
+	// data := make([][]byte, (size+int64(ChunkSize)-1)/int64(ChunkSize))
+	var data [][]byte
+	f, err := os.Open(sourceFile)
+	if err != nil{
+		return nil, 0, err
+	}
+	buf := make([]byte, ChunkSize)
+	for {
+		l, err := f.Read(buf)
+		if err != nil{
+			if err == io.EOF{
+				break
+			}
+			return nil, 0, err
+		}
+		data = append(data, buf[:l])
+	}
+	return data, size, nil
 }
 
 
@@ -93,7 +117,7 @@ func deleteFile(filename string) {
 	}
 }
 
-func appendFile(filename string, data []byte, fileSize uint64) error {
+func appendFile(filename string, data [][]byte, fileSize uint64) error {
 	conn, err := grpc.Dial(*ms, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("[%v] connect error: %v", "master", err)
@@ -129,7 +153,7 @@ func appendFile(filename string, data []byte, fileSize uint64) error {
 	failChan := make(chan error, len(chunkHandles))
 	defer close(failChan)
 	for i := 0; i < len(chunkHandles); i++ {
-		curData := data[i*int(ChunkSize) : (i+1)*int(ChunkSize)]
+		curData := data[i]
 		go appendToChunk(chunkCtx, primaryIps[i], chunkHandles[i], curData, reg.GetUniqueToken(), successChan, failChan)
 	}
 	count := 0
@@ -343,14 +367,14 @@ func main() {
 	case "delete":
 		deleteFile(*filename)
 	case "append":
-		data, err := readUserFile(*source)
+		data, size,  err := readUserFile(*source)
 		if err != nil {
-			fmt.Printf("Read file error: %v", err)
+			fmt.Errorf("Read file error: %v", err)
 			return
 		}
 		err = retry.Do(
 			func() error {
-				return appendFile(*filename, data, *filesize)
+				return appendFile(*filename, data, uint64(size))
 			},
 			retry.DelayType(retry.FixedDelay),
 			retry.Delay(time.Second),
