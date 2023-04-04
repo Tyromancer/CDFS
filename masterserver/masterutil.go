@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
     "encoding/base64"
 	"context"
-	"errors"
 	"log"
 
 	"github.com/tyromancer/cdfs/pb"
@@ -22,6 +21,9 @@ const (
 	ERROR_CHUNKSERVER_ALREADY_EXISTS
 	ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN
 	ERROR_FAIL_TO_DELETE
+	ERROR_FAIL_TO_CONNECT_TO_CHUNKSERVER
+	ERROR_FAIL_TO_CREATE_CHUNK_WHEN_CREATEFILE
+	ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND
 )
 
 const (
@@ -44,6 +46,12 @@ func ErrorCodeToString(e int32) string {
 		return "Error: fail to generate unique token string"
 	case ERROR_FAIL_TO_DELETE:
 		return "Error: fail to delete"
+	case ERROR_FAIL_TO_CONNECT_TO_CHUNKSERVER:
+		return "Error: fail to dial to chunk server"
+	case ERROR_FAIL_TO_CREATE_CHUNK_WHEN_CREATEFILE:
+		return "Error: encounter error when creating a chunk during create file"
+	case ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND:
+		return "Error: encounter error when creating a chunk during append"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -166,7 +174,7 @@ func DeleteChunkHandle(primary string, chunkHandle string) error {
 
 	// if grpc return an Error, handle this error back in main function
 	if resp.GetStatus().StatusCode != OK || err != nil {
-		return errors.New(ErrorCodeToString(ERROR_FAIL_TO_DELETE))
+		return err
 	}
 	return nil
 }
