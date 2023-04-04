@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"os"
 	"time"
 
@@ -301,8 +300,6 @@ func readFile(filename string, offset uint32, size uint32) ([]byte, error) {
 			return nil, fmt.Errorf("chunk server read timeout")
 		}
 	}
-
-	return nil, nil
 }
 
 func getVersion(ctx context.Context, Ip string, handle string) (uint32, error) {
@@ -386,7 +383,7 @@ func main() {
 	case "append":
 		data, size, err := readUserFile(*source)
 		if err != nil {
-			fmt.Errorf("Read file error: %v", err)
+			fmt.Printf("Read file error: %v", err)
 			return
 		}
 		err = retry.Do(
@@ -412,7 +409,7 @@ func main() {
 			fmt.Println(string(data))
 		} else {
 			if err := writeUserFile(*target, data); err != nil {
-				fmt.Errorf("Write data to path error %v", err)
+				fmt.Printf("Write data to path error %v", err)
 			}
 		}
 	}
