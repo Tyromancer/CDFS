@@ -68,6 +68,12 @@ func ErrorCodeToString(e int32) string {
 	}
 }
 
+type DebugInfo struct {
+	Addr       string
+	Func       string
+	StatusCode int32
+}
+
 type ChunkMetaData struct {
 	// file location in local file system
 	ChunkLocation string
@@ -104,22 +110,20 @@ type RespMetaData struct {
 // LoadChunk reads a file at the specified path with an offset start and ends the read at end
 // if end equals to 0, LoadChunk reads and returns the whole data starting from start, otherwise
 // it reads and returns (end - start) bytes
-func LoadChunk(path string, start uint32, end uint32) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	buffer := make([]byte, 0)
-	_, err = file.ReadAt(buffer, int64(start))
+func LoadChunk(path string, used uint32, start uint32, end uint32) ([]byte, error) {
+	//log.Printf("ChunkLocation: %s", path)
+	//log.Printf("Start at: %d", start)
+	//log.Printf("End at: %d", end)
+	file, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
 	if end == 0 {
-		return buffer, nil
+		return file[start:], nil
 	}
 
-	return buffer[:end-start], nil
+	return file[start:end], nil
 }
 
 func CreateFile(path string) error {
@@ -307,4 +311,8 @@ func Sum[T Number](slice []T) T {
 		result += v
 	}
 	return result
+}
+
+func GetAddr(host string, port uint32) string {
+	return fmt.Sprintf("%s:%d", host, port)
 }
