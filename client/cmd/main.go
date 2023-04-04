@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -39,7 +40,7 @@ var (
 	source   = flag.String("source", defaultSource, "source data file")
 	filesize = flag.Uint64("size", 0, "file size")
 	offset   = flag.Uint64("offset", 0, "offset")
-	target   = flag.String("target", defaultTarget, "target file to store data")
+	target   = flag.String("target", defaultTarget, "target path to store data")
 )
 
 // Util
@@ -70,6 +71,7 @@ func readUserFile(sourceFile string) ([][]byte, int64, error) {
 	if err != nil{
 		return nil, 0, err
 	}
+	defer f.Close()
 	buf := make([]byte, ChunkSize)
 	for {
 		l, err := f.Read(buf)
@@ -82,6 +84,22 @@ func readUserFile(sourceFile string) ([][]byte, int64, error) {
 		data = append(data, buf[:l])
 	}
 	return data, size, nil
+}
+
+func writeUserFile(targetPath string, data[]byte) error{
+	f, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE | os.O_APPEND, 0666)
+	if err != nil{
+		return err 
+	}
+	defer f.Close()
+	writer := bufio.NewWriter(f)
+	if _, err = writer.Write(data); err != nil{
+		return err
+	}
+	if err = writer.Flush(); err != nil{
+		return err
+	}
+	return nil 
 }
 
 
@@ -386,15 +404,17 @@ func main() {
 			fmt.Println("success")
 		}
 	case "read":
-		res, err := readFile(*filename, uint32(*offset), uint32(*filesize))
+		data, err := readFile(*filename, uint32(*offset), uint32(*filesize))
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		if *target == "" {
-			fmt.Println(string(res))
+			fmt.Println(string(data))
 		} else {
-			//TODO todostore into target file
+			if err := writeUserFile(*target, data); err != nil{
+				fmt.Errorf("Write data to path error %v", err)
+			}
 		}
 	}
 }
