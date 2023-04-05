@@ -16,7 +16,7 @@ func main() {
 	basePath := flag.String("path", "/CDFS", "base directory to store files")
 	masterHost := flag.String("mhost", "", "master server host address")
 	masterPort := flag.Uint("mport", 8080, "master server port number")
-	hbTimeout := flag.Int("hb", 100, "heartbeat timer timeout value (ms)")
+	// hbTimeout := flag.Int("hb", 100, "heartbeat timer timeout value (ms)")
 	flag.Parse()
 
 	// TODO: add command line argument checking
@@ -28,6 +28,7 @@ func main() {
 		log.Fatalf("Failed to listen on port 12345 %v", err)
 	}
 
+	//log.Println("Starting connect to master host at %s ", addr)
 	s := cs.ChunkServer{
 		BasePath:   *basePath,
 		HostName:   *host,
@@ -46,8 +47,8 @@ func main() {
 	}
 
 	// Sending Heartbeat
-	timer := cs.HeartBeatTimer{Srv: &s, Timeout: *hbTimeout}
-	go timer.Trigger()
+	//timer := cs.HeartBeatTimer{Srv: &s, Timeout: *hbTimeout}
+	//go timer.Trigger()
 
 	if err = grpcServer.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve chunk server gRPC on port 12345: %v", err)
