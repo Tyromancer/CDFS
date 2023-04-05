@@ -22,7 +22,7 @@ func CreateFile(master string, filename string) {
 	masterConn := pb.NewMasterClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	res, err := masterConn.Create(ctx, &pb.CreateReq{})
+	res, err := masterConn.Create(ctx, &pb.CreateReq{FileName: filename})
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
 		log.Fatalf("create file error:  %+v %+v", res, err)
 	}
