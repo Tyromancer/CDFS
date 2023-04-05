@@ -39,7 +39,7 @@ func ErrorCodeToString(e int32) string {
 	case ERROR_PRIMARY_NOT_EXISTS:
 		return "Error: the primary does not exist for the chunk handle"
 	case ERROR_FILE_ALREADY_EXISTS:
-		return "Error: the given FileName does not exist"
+		return "Error: the given FileName already exist"
 	case ERROR_CHUNKSERVER_ALREADY_EXISTS:
 		return "Error: the chunk server already exists"
 	case ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN:
