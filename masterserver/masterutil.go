@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"crypto/rand"
-    "encoding/base64"
+    "encoding/base32"
 	"context"
 	"log"
 
@@ -146,7 +146,7 @@ func GenerateToken(length int) (string, error) {
     }
 
     // encode as base64
-    token := base64.StdEncoding.EncodeToString(bytes)
+    token := base32.StdEncoding.EncodeToString(bytes)
 
     return token, nil
 }
