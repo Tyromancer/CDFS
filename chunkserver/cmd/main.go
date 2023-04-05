@@ -29,11 +29,16 @@ func main() {
 	}
 
 	s := cs.ChunkServer{
-		BasePath:   *basePath,
-		HostName:   *host,
-		Port:       uint32(*port),
-		MasterIP:   *masterHost,
-		MasterPort: uint32(*masterPort),
+		Chunks:         make(map[string]*cs.ChunkMetaData),
+		ClientLastResp: make(map[string]cs.RespMetaData),
+		ServerName:     cs.GetAddr(*host, uint32(*port)),
+		BasePath:       *basePath,
+		HostName:       *host,
+		Port:           uint32(*port),
+		MasterIP:       *masterHost,
+		MasterPort:     uint32(*masterPort),
+		Debug:          false,
+		DebugChan:      nil,
 	}
 
 	grpcServer := grpc.NewServer()
