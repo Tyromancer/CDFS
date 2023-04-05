@@ -1,6 +1,7 @@
 package chunkserver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -44,7 +45,7 @@ func BuildAndRunThreeChunkServers(t *testing.T, config *BuildChunkServerConfig) 
 	backupPort1 := config.Backup1Port
 	backupPort2 := config.Backup2Port
 
-	primaryBasePath, backupBasePath1, backupBasePath2 := t.TempDir(), t.TempDir(), t.TempDir()
+	primaryBasePath, backupBasePath1, backupBasePath2 := "/CDFS", t.TempDir(), t.TempDir()
 
 	debugChan = make(chan DebugInfo)
 	p = buildChunkServer(t, primaryPort, config.MasterHost, config.MasterPort, primaryBasePath, debugChan)
@@ -209,6 +210,7 @@ func TestCreateValidChunkWithReplication(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to connect to primary goroutine: %v", err)
 	}
+	defer primaryConn.Close()
 
 	req := &pb.CreateChunkReq{
 		ChunkHandle: chunkHandle,
@@ -469,6 +471,136 @@ func TestDelete(t *testing.T) {
 	}
 	if _, ok := b2.Chunks[chunkHandle]; ok {
 		t.Errorf("chunk metadata still in backup2")
+	}
+}
+
+func TestRead(t *testing.T) {
+	t.Log("Running TestRead...")
+	ctx := context.Background()
+	p, b1, b2, debugChan := BuildAndRunThreeChunkServers(t, &BuildChunkServerConfig{
+		PrimaryPort: 12345,
+		Backup1Port: 12346,
+		Backup2Port: 12347,
+		MasterHost:  "",
+		MasterPort:  0,
+	})
+	defer close(debugChan)
+
+	time.Sleep(time.Duration(100) * time.Millisecond)
+
+	// create a chunk
+	chunkHandle := "chunk#1"
+	role := Primary
+
+	primaryConn, err := NewPeerConn(p.ServerName)
+	if err != nil {
+		t.Errorf("failed to connect to primary goroutine: %v", err)
+	}
+	defer primaryConn.Close()
+
+	req := &pb.CreateChunkReq{
+		ChunkHandle: chunkHandle,
+		Role:        uint32(role),
+		Primary:     p.ServerName,
+		Peers:       []string{b1.ServerName, b2.ServerName},
+	}
+
+	primaryCS := pb.NewChunkServerClient(primaryConn)
+	res, err := primaryCS.CreateChunk(context.Background(), req)
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		t.Errorf("failed to create chunk: %v", err)
+	}
+
+	// append to chunk
+	appendReqID := uuid.New()
+	appendData := []byte("appendDataChunkTest")
+	appendReq := &pb.AppendDataReq{
+		ChunkHandle: chunkHandle,
+		FileData:    appendData,
+		Token:       "client#1",
+		Uuid:        appendReqID.String(),
+	}
+
+	appendRes, err := primaryCS.AppendData(ctx, appendReq)
+	if err != nil || appendRes.GetStatus().GetStatusCode() != OK {
+		t.Errorf("failed to append to primary CS: %v", err)
+	}
+
+	// read a chunk
+	b1Conn, err := NewPeerConn(b1.ServerName)
+	if err != nil {
+		t.Errorf("failed to connect to backup1 goroutine: %v", err)
+	}
+	defer b1Conn.Close()
+
+	b2Conn, err := NewPeerConn(b2.ServerName)
+	if err != nil {
+		t.Errorf("failed to connect to backup2 goroutine: %v", err)
+	}
+	defer b2Conn.Close()
+
+	b1CS := pb.NewChunkServerClient(b1Conn)
+	b2CS := pb.NewChunkServerClient(b2Conn)
+
+	readVersionReq := &pb.ReadVersionReq{ChunkHandle: chunkHandle}
+	readVerResp, err := primaryCS.ReadVersion(ctx, readVersionReq)
+	CheckError(t, readVerResp, err, OK)
+	readVerResp1, err := b1CS.ReadVersion(ctx, readVersionReq)
+	CheckError(t, readVerResp1, err, OK)
+	readVerResp2, err := b2CS.ReadVersion(ctx, readVersionReq)
+	CheckError(t, readVerResp2, err, OK)
+
+	pVersion := readVerResp.GetVersion()
+	b1Version := readVerResp1.GetVersion()
+	b2Version := readVerResp2.GetVersion()
+	if pVersion != b1Version || b1Version != b2Version {
+		t.Errorf("Read Version from 3 Chunk Server do not match")
+	}
+
+	readReq := &pb.ReadReq{
+		ChunkHandle: chunkHandle,
+		Token:       "client#1",
+		Start:       0,
+		End:         0,
+	}
+
+	readResp, err := primaryCS.Read(ctx, readReq)
+	CheckError(t, readResp, err, OK)
+	readResp1, err := b1CS.Read(ctx, readReq)
+	CheckError(t, readResp1, err, OK)
+	readResp2, err := b2CS.Read(ctx, readReq)
+	CheckError(t, readResp2, err, OK)
+
+	readData := readResp.GetFileData()
+	readData1 := readResp1.GetFileData()
+	readData2 := readResp2.GetFileData()
+
+	if !bytes.Equal(readData, readData1) || !bytes.Equal(readData1, readData2) || !bytes.Equal(readData2, appendData) {
+		t.Errorf("Read Data from 3 Chunk Server do not match")
+	}
+
+	start := len(appendData) / 2
+
+	readOffsetReq := &pb.ReadReq{
+		ChunkHandle: chunkHandle,
+		Token:       "client#1",
+		Start:       uint32(start),
+		End:         0,
+	}
+
+	readOffsetResp, err := primaryCS.Read(ctx, readOffsetReq)
+	CheckError(t, readOffsetResp, err, OK)
+	readOffsetResp1, err := b1CS.Read(ctx, readOffsetReq)
+	CheckError(t, readOffsetResp1, err, OK)
+	readOffsetResp2, err := b2CS.Read(ctx, readOffsetReq)
+	CheckError(t, readOffsetResp2, err, OK)
+
+	readOffsetData := readOffsetResp.GetFileData()
+	readOffsetData1 := readOffsetResp1.GetFileData()
+	readOffsetData2 := readOffsetResp2.GetFileData()
+
+	if !bytes.Equal(readOffsetData, readOffsetData1) || !bytes.Equal(readOffsetData1, readOffsetData2) || !bytes.Equal(readOffsetData2, appendData[start:]) {
+		t.Errorf("Read Offset Data from 3 Chunk Server do not match")
 	}
 }
 
