@@ -32,9 +32,6 @@ type MasterServer struct {
 	BasePath string
 }
 
-
-
-
 // chunk server <-> Master : ChunkServer Register, save the chunk server host and port
 func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegisterReq) (*pb.CSRegisterResp, error) {
 	csHost := csRegisterReq.GetHost()
@@ -51,9 +48,6 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 
 	return NewCSRegisterResp(OK), nil
 }
-
-
-
 
 // GetLocation return the IP of the Primary chunkserver and chunkID back to client
 func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLocationReq) (*pb.GetLocationResp, error) {
@@ -79,7 +73,7 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 	endChunkIndex := endLoc[0]
 	endFinal := endLoc[1]
 
-	toReadHandles := allHandles[startChunkIndex:endChunkIndex+1]
+	toReadHandles := allHandles[startChunkIndex : endChunkIndex+1]
 	for _, handleMeta := range toReadHandles {
 		handle := handleMeta.ChunkHandle
 		primary := handleMeta.PrimaryChunkServer
@@ -90,19 +84,18 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 		}
 		backup := handleMeta.BackupAddress
 		newCSInfoMessage := &pb.ChunkServerInfo{
-			ChunkHandle: handle, 
-			PrimaryAddress: primary, 
-			BackupAddress: backup,
+			ChunkHandle:    handle,
+			PrimaryAddress: primary,
+			BackupAddress:  backup,
 		}
 		csInfoSlice = append(csInfoSlice, newCSInfoMessage)
 	}
 
 	log.Printf("Find all the chunkservers to read given the FileName and ChunkIndex")
+	log.Println("Response to client read request, start: ", startFinal)
+	log.Println("Response to client read request, end: ", endFinal)
 	return NewGetLocationResp(OK, csInfoSlice, startFinal, endFinal), nil
 }
-
-
-
 
 // client -> Master Create file given the FileName
 func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb.CreateResp, error) {
@@ -111,6 +104,7 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 
 	// check if FileName already exists
 	_, ok := s.Files[fileName]
+	log.Println("Create File Name with name: ", fileName)
 	if ok {
 		res := NewCreateResp(ERROR_FILE_ALREADY_EXISTS)
 		return res, nil
@@ -152,10 +146,10 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 
 	c := pb.NewChunkServerClient(conn)
 	req := &pb.CreateChunkReq{
-		ChunkHandle: chunkHandle, 
-		Role: 0, 
-		Primary: primary, 
-		Peers: peers,
+		ChunkHandle: chunkHandle,
+		Role:        0,
+		Primary:     primary,
+		Peers:       peers,
 	}
 	res, err := c.CreateChunk(context.Background(), req)
 
@@ -165,21 +159,17 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 
 	// update Files mapping
 	handleMeta := HandleMetaData{
-		ChunkHandle: chunkHandle, 
-		PrimaryChunkServer: primary, 
-		BackupAddress: peers, 
-		Used: 0,
+		ChunkHandle:        chunkHandle,
+		PrimaryChunkServer: primary,
+		BackupAddress:      peers,
+		Used:               0,
 	}
 	s.Files[fileName] = []*HandleMetaData{&handleMeta}
 	s.HandleToMeta[chunkHandle] = &handleMeta
 
-	
 	return NewCreateResp(OK), nil
-	
 
 }
-
-
 
 // Client <-> Master : AppendFile request, given fileName and append size
 func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendFileReq) (*pb.AppendFileResp, error) {
@@ -265,9 +255,9 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 
 		c := pb.NewChunkServerClient(conn)
 		req := &pb.CreateChunkReq{
-			ChunkHandle: chunkHandle, 
-			Role: 0, 
-			Peers: peers,
+			ChunkHandle: chunkHandle,
+			Role:        0,
+			Peers:       peers,
 		}
 		res, err := c.CreateChunk(context.Background(), req)
 
@@ -281,10 +271,10 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 			used = uint(fileSize)
 		}
 		handleMeta := HandleMetaData{
-			ChunkHandle: chunkHandle, 
-			PrimaryChunkServer: primary, 
-			BackupAddress: peers, 
-			Used: used,
+			ChunkHandle:        chunkHandle,
+			PrimaryChunkServer: primary,
+			BackupAddress:      peers,
+			Used:               used,
 		}
 		s.Files[fileName] = append(s.Files[fileName], &handleMeta)
 		s.HandleToMeta[chunkHandle] = &handleMeta
@@ -303,27 +293,21 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	return res, nil
 }
 
-
-
-
-/* 
+/*
 Client <-> Master : Master return a unique token for each client
 First message client send to master
 */
 func (s *MasterServer) GetToken(ctx context.Context, getTokenReq *pb.GetTokenReq) (*pb.GetTokenResp, error) {
 	token, err := GenerateToken(16)
 	if err != nil {
-        return NewGetTokenResp(""), status.Errorf(codes.NotFound, "Error when generating token")
-    }
+		return NewGetTokenResp(""), status.Errorf(codes.NotFound, "Error when generating token")
+	}
 	return NewGetTokenResp(token), nil
-	
+
 }
 
-
-
-
 // Client <-> Master : Delete a file given the filename
-func (s *MasterServer) 	Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*pb.DeleteStatus, error) {
+func (s *MasterServer) Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*pb.DeleteStatus, error) {
 	fileName := deleteReq.GetFileName()
 	allHandles, exist := s.Files[fileName]
 	if !exist {
@@ -351,8 +335,6 @@ func (s *MasterServer) 	Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*p
 	return res, nil
 }
 
-
-
 // chunk server <-> Master : modify used and load based on append outcome
 func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.AppendResultReq) (*pb.AppendResultResp, error) {
 	statusCode := appendResultReq.GetStatus().GetStatusCode()
@@ -362,14 +344,13 @@ func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.App
 	// if append fail, modify chunkMeta Used & chunkserver load
 	if statusCode != OK {
 		chunkMetaData := s.HandleToMeta[chunkHandle]
-		chunkMetaData.Used -= uint (size)
+		chunkMetaData.Used -= uint(size)
 		primary := chunkMetaData.PrimaryChunkServer
-		s.ChunkServerLoad[primary] -= uint (size)
+		s.ChunkServerLoad[primary] -= uint(size)
 		for i := 0; i < len(chunkMetaData.BackupAddress); i++ {
-			s.ChunkServerLoad[chunkMetaData.BackupAddress[i]] -= uint (size)
+			s.ChunkServerLoad[chunkMetaData.BackupAddress[i]] -= uint(size)
 		}
 	}
 
 	return NewAppendResultResp(), nil
 }
-
