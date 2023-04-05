@@ -158,9 +158,13 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 		}
 		return nil, err
 	}
+
 	chunkInfos := res.GetChunkInfo()
+	log.Println("Received Chunk Info: ", chunkInfos)
 	start := res.GetStart()
 	end := res.GetEnd()
+	log.Println("Received Master start: ", start)
+	log.Println("Received Master end: ", end)
 	dataChan := make(chan readResult, len(chunkInfos))
 	count := 0
 	chunkCtx, cancel := context.WithCancel(context.Background())
@@ -180,6 +184,8 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 		if len(backups) > 0 {
 			backup = backups[0]
 		}
+		log.Println("In readFile loop, s is ", s)
+		log.Println("e is ", e)
 		if s != e {
 			go readChunkData(chunkCtx, count, primary, backup, handle, s, e, dataChan)
 			count += 1
@@ -264,8 +270,10 @@ func readChunkData(ctx context.Context, index int, primaryIp string, backupIp st
 	}
 	// TODO: ask chunk to remove token
 	req := pb.ReadReq{ChunkHandle: handle, Token: "#USELESS", Start: start, End: end}
+	log.Println("Send Read Request: ", req)
 	csClient := pb.NewChunkServerClient(csConn)
 	res, err := csClient.Read(ctx, &req)
+	log.Println("Chunk Server Read Result: ", res)
 	if err != nil {
 		log.Fatalf("Failed to read chunk server error: %+v", err)
 		dataChan <- readResult{err: err}
