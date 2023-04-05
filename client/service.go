@@ -271,7 +271,7 @@ func readChunkData(ctx context.Context, index int, primaryIp string, backupIp st
 		dataChan <- readResult{err: err}
 		return
 	}
-	if res.GetStatus().GetErrorMessage() != "" {
+	if res.GetStatus().GetStatusCode() != 0{
 		log.Fatalf("Failed to read chunk server error: %+v", res.GetStatus().GetErrorMessage())
 		dataChan <- readResult{err: fmt.Errorf(res.GetStatus().GetErrorMessage())}
 		return
