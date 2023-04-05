@@ -14,7 +14,7 @@ const (
 	defaultChunkServer = ""
 	defaultOps         = ""
 	defaultFileName    = ""
-	defaultSource      = "client/cmd/data.txt"
+	defaultSource      = "data/simple.txt"
 	defaultTarget      = ""
 )
 
