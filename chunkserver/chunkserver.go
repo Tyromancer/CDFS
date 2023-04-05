@@ -434,7 +434,7 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 
 	// versions don't match: send file content back to caller
 	// fetch real chunk data and set fileData field
-	chunkData, err := LoadChunk(chunkHandle, meta.Used, 0, 0)
+	chunkData, err := LoadChunk(meta.ChunkLocation, meta.Used, 0, 0)
 	if err != nil {
 		res := NewGetVersionResp(ERROR_READ_FAILED, nil, nil)
 		return res, nil
