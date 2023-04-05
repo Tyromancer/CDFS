@@ -37,7 +37,7 @@ func DeleteFile(master string, filename string) {
 	masterConn := pb.NewMasterClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	res, err := masterConn.Delete(ctx, &pb.DeleteReq{})
+	res, err := masterConn.Delete(ctx, &pb.DeleteReq{FileName: filename})
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
 		log.Fatalf("delete file error:  %+v %+v", res, err)
 	}
