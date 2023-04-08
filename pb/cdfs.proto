@@ -7,22 +7,29 @@ option go_package="github.com/tyromancer/cdfs/pb";
 // Master
 service Master {
 	// Client <-> Master
-
+	// First message client send to master
+	rpc GetToken(GetTokenReq) returns (GetTokenResp) {}
 	rpc GetLocation(GetLocationReq) returns (GetLocationResp) {} 
 	// TODO: chunkIndex or offset?
 	// chunkIndex : client has to maintain -> multiple client problem?
 	// offset: Master has to main chunk usage.
 
 	//rpc Write(fileName, chunkIndex) returns (WriteResp) {}
-	
 	rpc AppendFile(AppendFileReq) returns (AppendFileResp) {} 
 	rpc Delete(DeleteReq) returns (DeleteStatus) {} 
 	rpc Create(CreateReq) returns (CreateResp) {} // filename only or with content?
 
 	// chunk server <-> Master
 	rpc HeartBeat(HeartBeatPayload) returns (HeartBeatResp) {}
-
 	rpc CSRegister(CSRegisterReq) returns (CSRegisterResp) {}
+	rpc AppendResult(AppendResultReq) returns (AppendResultResp) {}
+}
+
+message GetTokenReq {
+
+}
+message GetTokenResp {
+	string uniqueToken = 1;
 }
 
 message CSRegisterReq {
@@ -37,12 +44,30 @@ message CSRegisterResp {
 // TODO: which of these msgs need a token?
 message GetLocationReq {
     string fileName = 1;
-    uint32 chunkIndex = 2;
+    uint32 offset = 2;
+		uint32 size = 3;
+}
+
+message GetLocationResp{
+	Status status = 1;
+	repeated ChunkServerInfo chunkInfo= 2;
+	// offset only for first
+	// start for the first chunk
+	uint32 start = 3;
+	// end for the last chunk
+	uint32 end = 4;
+}
+
+message ChunkServerInfo{
+	string chunkHandle = 1;
+	string primaryAddress = 2;
+	repeated string backupAddress = 3;
 }
 
 message AppendFileReq {
     string fileName = 1;
     uint32 fileSize = 2;
+		string uuid = 3;
 }
 
 message DeleteReq {
@@ -57,9 +82,6 @@ message CreateResp {
     Status status = 1;
 }
 
-message HeartBeatPayload {
-
-}
 
 message Status {
 	int32 statusCode = 1;
@@ -70,91 +92,139 @@ message DeleteStatus {
 	Status status = 1;
 }
 
-message GetLocationResp{
-	Status status = 1;
-	string primaryIP = 2;
-//	uint32 chunkID = 3;
-	string chunkHandle = 3;
-
-}
 
 message AppendFileResp{
 	Status status = 1;
 	repeated string primaryIP = 2;
-//	repeated uint32 chunkID = 3;
+//repeated uint32 chunkID = 3;
 	repeated string chunkHandle = 3;
-
 }
 
-message HeartBeat{
+message HeartBeatPayload{
 //	repeated uint32 chunkID = 1;
 		repeated string chunkHandle = 1;
-
+		repeated uint32 used = 2;
+		string name = 3;
 }
 
 message HeartBeatResp{
 	Status status = 1;
 }
 
+message AppendResultReq{
+	string chunkHandle = 1;
+	uint32 size = 2;
+	Status status = 3;
+}
+
+message AppendResultResp{
+
+}
+
 service ChunkServer {
 	// Master -> ChunkServer
 	rpc CreateChunk(CreateChunkReq) returns (CreateChunkResp) {}
-
+	rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkResp) {}
 	// Client -> ChunkServer
+	rpc ReadVersion(ReadVersionReq) returns (ReadVersionResp) {}
 	rpc Read(ReadReq) returns (ReadResp) {}
 	rpc AppendData(AppendDataReq) returns (AppendDataResp) {}
 	// ChunkServer -> ChunkServer
+	rpc ForwardCreate(ForwardCreateReq) returns (ForwardCreateResp) {}
 	rpc Replicate(ReplicateReq) returns (ReplicateResp) {}
+	rpc GetVersion(GetVersionReq) returns (GetVersionResp) {}
+}
+
+message DeleteChunkReq {
+	string chunkHandle = 1;
+}
+
+message DeleteChunkResp {
+	Status status = 1;
 }
 
 message CreateChunkReq {
 	string chunkHandle = 1;
 	uint32 role = 2;
-	repeated string peers = 3;
+	string primary = 3;
+	repeated string peers = 4;
 }
+
 message CreateChunkResp {
 	Status status = 1;
 }
 
-message ReadReq {
-	uint32 seqNum = 1;
-//	was uint32 chunkID = 2;
-	string chunkHandle = 2;
+message ForwardCreateReq{
+	string chunkHandle = 1;
+	string primary = 2;
+}
 
-	string token = 3;
+message ForwardCreateResp{
+	Status status = 1;
+}
+
+message GetVersionReq{
+	string chunkHandle = 1;
+	uint32 version = 2;
+}
+
+message GetVersionResp{
+	Status status = 1;
+	optional uint32 version = 2;
+	optional bytes chunkData = 3;
+}
+
+message ReadVersionReq {
+	string chunkHandle = 1;
+}
+
+message ReadVersionResp {
+	Status status = 1;
+	optional uint32 version = 2;
+}
+
+message ReadReq {
+	// uint32 seqNum = 1;
+  // was uint32 chunkID = 2;
+	string chunkHandle = 1;
+	string token = 2;
+	uint32 start = 3;
+	// if end == 0, read the whole chunk
+	uint32 end = 4;
 }
 
 message ReadResp {
-	uint32 seqNum = 1;
-	bytes fileData = 2;
-	Status status = 3;
+	// uint32 seqNum = 1;
+	bytes fileData = 1;
+	Status status = 2;
+	optional uint32 version = 3;
 }
 
 message AppendDataReq {
-	uint32 seqNum = 1;
+	// uint32 seqSeq = 1;
 	// was	uint32 chunkID = 2;
-	string chunkHandle = 2;
-
-	bytes fileData = 3;
-	string token = 4;
+	string chunkHandle = 1;
+	bytes fileData = 2;
+	string token = 3;
+	string uuid = 4;
 }
 
 message AppendDataResp {
 	Status status = 1;
-	
 }
 
 message ReplicateReq {
-	uint32 seqNum = 1;
+	// uint32 seqNum = 1;
 	// was clientIP
-	string clientToken = 2;
+	string clientToken = 1;
 	//	was uint32 chunkID = 3;
-	string chunkHandle = 3;
-	bytes fileData = 4;
-	uint32 uuid = 5;
+	string chunkHandle = 2;
+	bytes fileData = 3;
+	string reqID = 4;
+	uint32 version = 5;
 }
 
 message ReplicateResp {
 	Status status = 1;
-	uint32 uuid = 2;
+	string uuid = 2;
 }
