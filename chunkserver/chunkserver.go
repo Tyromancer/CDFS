@@ -562,7 +562,7 @@ func (s *ChunkServer) ChangeToPrimary(ctx context.Context, req *pb.ChangeToPrima
 
 // AssignNewPrimary role to certain chunkhandle change the primary.
 func (s *ChunkServer) AssignNewPrimary(ctx context.Context, req *pb.AssignNewPrimaryReq) (res *pb.AssignNewPrimaryResp, err error) {
-	// Check Role, if chunkhandle exists
+	// Check Role, if chunk handle exists
 	chunkHandle := req.GetChunkHandle()
 	newPrimary := req.GetPrimary()
 	meta, ok := s.Chunks[chunkHandle]

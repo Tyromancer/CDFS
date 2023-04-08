@@ -611,7 +611,7 @@ func TestChangeToPrimary(t *testing.T) {
 	port := 12345
 	path := t.TempDir()
 	backupServer := buildChunkServer(t, uint32(port), "", 0, path, nil)
-	chunkhandle := "chunk#1"
+	chunkHandle := "chunk#1"
 	metaData := ChunkMetaData{
 		ChunkLocation:      path,
 		Role:               Secondary,
@@ -622,10 +622,10 @@ func TestChangeToPrimary(t *testing.T) {
 		MetaDataLock:       sync.Mutex{},
 		GetVersionChannel:  nil,
 	}
-	backupServer.Chunks[chunkhandle] = &metaData
+	backupServer.Chunks[chunkHandle] = &metaData
 	peers := []string{"localHost:12347", "localHost:12348"}
 	req := &pb.ChangeToPrimaryReq{
-		ChunkHandle: chunkhandle,
+		ChunkHandle: chunkHandle,
 		Role:        Primary,
 		Peers:       peers,
 	}
@@ -636,7 +636,7 @@ func TestChangeToPrimary(t *testing.T) {
 	if res.GetStatus().GetStatusCode() != OK {
 		t.Errorf("Get Error Status Message: %s", res.GetStatus().GetErrorMessage())
 	}
-	newMeta, ok := backupServer.Chunks[chunkhandle]
+	newMeta, ok := backupServer.Chunks[chunkHandle]
 	if !ok {
 		t.Errorf("Chunk Handle not exists")
 	}
@@ -693,5 +693,129 @@ func TestChangeToPrimary(t *testing.T) {
 	}
 	if res.GetStatus().GetStatusCode() != ERROR_NOT_SECONDARY {
 		t.Errorf("Get Error Status Message: %s", res.GetStatus().GetErrorMessage())
+	}
+}
+
+func TestAssignNewPrimary(t *testing.T) {
+	t.Log("Running TestAssignNewPrimary...")
+	port := 12345
+	backupPath := t.TempDir()
+	backupServer := buildChunkServer(t, uint32(port), "", 0, backupPath, nil)
+	newPrimary := "localHost:12346"
+
+	// TODO: Now is Primary, return error
+	primaryChunkHandle := "Chunk#1"
+	primaryMeta := &ChunkMetaData{
+		ChunkLocation:      backupPath,
+		Role:               Primary,
+		PrimaryChunkServer: "",
+		PeerAddress:        nil,
+		Used:               0,
+		Version:            0,
+		MetaDataLock:       sync.Mutex{},
+		GetVersionChannel:  nil,
+	}
+	backupServer.Chunks[primaryChunkHandle] = primaryMeta
+	reqIsPrimary := &pb.AssignNewPrimaryReq{
+		ChunkHandle: primaryChunkHandle,
+		Primary:     newPrimary,
+	}
+	res, err := backupServer.AssignNewPrimary(context.Background(), reqIsPrimary)
+	if err != nil {
+		t.Errorf("Get Error response: %s", err)
+	}
+	if res.GetStatus().GetStatusCode() != ERROR_NOT_SECONDARY {
+		t.Errorf("Get Error Status Message: %s", res.GetStatus().GetErrorMessage())
+	}
+
+	// TODO: Now is Backup, and Chunk already exist, update primary return OK
+	backupChunkHandle := "Chunk#2"
+	backupMeta := &ChunkMetaData{
+		ChunkLocation:      backupPath,
+		Role:               Secondary,
+		PrimaryChunkServer: "localHost:12347",
+		PeerAddress:        nil,
+		Used:               0,
+		Version:            0,
+		MetaDataLock:       sync.Mutex{},
+		GetVersionChannel:  nil,
+	}
+	backupServer.Chunks[backupChunkHandle] = backupMeta
+	backupReq := &pb.AssignNewPrimaryReq{
+		ChunkHandle: backupChunkHandle,
+		Primary:     newPrimary,
+	}
+	res, err = backupServer.AssignNewPrimary(context.Background(), backupReq)
+	if err != nil {
+		t.Errorf("Get Error response: %s", err)
+	}
+	if res.GetStatus().GetStatusCode() != OK {
+		t.Errorf("Get Error Status Message: %s", res.GetStatus().GetErrorMessage())
+	}
+	newMeta, ok := backupServer.Chunks[backupChunkHandle]
+	if !ok {
+		t.Errorf("Chunk Handle not exists")
+	}
+	if newMeta.PrimaryChunkServer != newPrimary {
+		t.Errorf("Primary Address in meta is not updated")
+	}
+	// TODO: Chunk not exists, create new chunkFIle return OK
+	primaryPort := 12346
+	primaryPath := t.TempDir()
+	debugChan := make(chan DebugInfo)
+	primaryServer := buildChunkServer(t, uint32(primaryPort), "", 8080, primaryPath, debugChan)
+	notExistChunkHandle := "Chunk#3"
+	primaryMetaData := &ChunkMetaData{
+		ChunkLocation:      "",
+		Role:               Primary,
+		PrimaryChunkServer: "",
+		PeerAddress:        nil,
+		Used:               0,
+		Version:            0,
+		MetaDataLock:       sync.Mutex{},
+		GetVersionChannel:  nil,
+	}
+	primaryServer.Chunks[notExistChunkHandle] = primaryMetaData
+	go startChunkServer(t, primaryServer)
+	notExistReq := &pb.AssignNewPrimaryReq{
+		ChunkHandle: notExistChunkHandle,
+		Primary:     newPrimary,
+	}
+	res, err = backupServer.AssignNewPrimary(context.Background(), notExistReq)
+	if err != nil {
+		t.Errorf("Get Error response: %s", err)
+	}
+	if res.GetStatus().GetStatusCode() != OK {
+		t.Errorf("Get Error Status Message: %s", res.GetStatus().GetErrorMessage())
+	}
+	newMeta, ok = backupServer.Chunks[notExistChunkHandle]
+	if !ok {
+		t.Errorf("Chunk Handle not exists")
+	}
+	// path
+	if newMeta.ChunkLocation != backupPath+"/"+notExistChunkHandle {
+		t.Errorf("Chunk Location is not updated")
+	}
+	// role
+	if newMeta.Role != Secondary {
+		t.Errorf("Chunk Role is not correct")
+	}
+	// primary address
+	if newMeta.PrimaryChunkServer != newPrimary {
+		t.Errorf("Primary Address is not updated")
+	}
+	// timer?
+	time.Sleep(time.Duration(100) * time.Millisecond)
+	counter := 0
+	for counter < 1 {
+		select {
+		case info := <-debugChan:
+			if strings.Compare("GetVersion", info.Func) == 0 && strings.Compare(info.Addr, primaryServer.ServerName) == 0 {
+				counter += 1
+				t.Logf("Got debug info: Addr: %s, Func: %s, StatusCode: %d", info.Addr, info.Func, info.StatusCode)
+			} else {
+				t.Errorf("Got not expected debug info: Addr: %s, Func: %s, StatusCode: %d", info.Addr, info.Func, info.StatusCode)
+			}
+		}
 	}
 }

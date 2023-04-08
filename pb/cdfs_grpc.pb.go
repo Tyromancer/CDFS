@@ -380,6 +380,7 @@ const (
 	ChunkServer_DeleteChunk_FullMethodName      = "/pb.ChunkServer/DeleteChunk"
 	ChunkServer_ChangeToPrimary_FullMethodName  = "/pb.ChunkServer/ChangeToPrimary"
 	ChunkServer_AssignNewPrimary_FullMethodName = "/pb.ChunkServer/AssignNewPrimary"
+	ChunkServer_UpdateBackup_FullMethodName     = "/pb.ChunkServer/UpdateBackup"
 	ChunkServer_ReadVersion_FullMethodName      = "/pb.ChunkServer/ReadVersion"
 	ChunkServer_Read_FullMethodName             = "/pb.ChunkServer/Read"
 	ChunkServer_AppendData_FullMethodName       = "/pb.ChunkServer/AppendData"
@@ -398,6 +399,7 @@ type ChunkServerClient interface {
 	// Use Read Version to check who is new primary
 	ChangeToPrimary(ctx context.Context, in *ChangeToPrimaryReq, opts ...grpc.CallOption) (*ChangeToPrimaryResp, error)
 	AssignNewPrimary(ctx context.Context, in *AssignNewPrimaryReq, opts ...grpc.CallOption) (*AssignNewPrimaryResp, error)
+	UpdateBackup(ctx context.Context, in *UpdateBackupReq, opts ...grpc.CallOption) (*UpdateBackupResp, error)
 	// Client -> ChunkServer
 	ReadVersion(ctx context.Context, in *ReadVersionReq, opts ...grpc.CallOption) (*ReadVersionResp, error)
 	Read(ctx context.Context, in *ReadReq, opts ...grpc.CallOption) (*ReadResp, error)
@@ -446,6 +448,15 @@ func (c *chunkServerClient) ChangeToPrimary(ctx context.Context, in *ChangeToPri
 func (c *chunkServerClient) AssignNewPrimary(ctx context.Context, in *AssignNewPrimaryReq, opts ...grpc.CallOption) (*AssignNewPrimaryResp, error) {
 	out := new(AssignNewPrimaryResp)
 	err := c.cc.Invoke(ctx, ChunkServer_AssignNewPrimary_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chunkServerClient) UpdateBackup(ctx context.Context, in *UpdateBackupReq, opts ...grpc.CallOption) (*UpdateBackupResp, error) {
+	out := new(UpdateBackupResp)
+	err := c.cc.Invoke(ctx, ChunkServer_UpdateBackup_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -516,6 +527,7 @@ type ChunkServerServer interface {
 	// Use Read Version to check who is new primary
 	ChangeToPrimary(context.Context, *ChangeToPrimaryReq) (*ChangeToPrimaryResp, error)
 	AssignNewPrimary(context.Context, *AssignNewPrimaryReq) (*AssignNewPrimaryResp, error)
+	UpdateBackup(context.Context, *UpdateBackupReq) (*UpdateBackupResp, error)
 	// Client -> ChunkServer
 	ReadVersion(context.Context, *ReadVersionReq) (*ReadVersionResp, error)
 	Read(context.Context, *ReadReq) (*ReadResp, error)
@@ -542,6 +554,9 @@ func (UnimplementedChunkServerServer) ChangeToPrimary(context.Context, *ChangeTo
 }
 func (UnimplementedChunkServerServer) AssignNewPrimary(context.Context, *AssignNewPrimaryReq) (*AssignNewPrimaryResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssignNewPrimary not implemented")
+}
+func (UnimplementedChunkServerServer) UpdateBackup(context.Context, *UpdateBackupReq) (*UpdateBackupResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateBackup not implemented")
 }
 func (UnimplementedChunkServerServer) ReadVersion(context.Context, *ReadVersionReq) (*ReadVersionResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReadVersion not implemented")
@@ -642,6 +657,24 @@ func _ChunkServer_AssignNewPrimary_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ChunkServerServer).AssignNewPrimary(ctx, req.(*AssignNewPrimaryReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChunkServer_UpdateBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateBackupReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).UpdateBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChunkServer_UpdateBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).UpdateBackup(ctx, req.(*UpdateBackupReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -776,6 +809,10 @@ var ChunkServer_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AssignNewPrimary",
 			Handler:    _ChunkServer_AssignNewPrimary_Handler,
+		},
+		{
+			MethodName: "UpdateBackup",
+			Handler:    _ChunkServer_UpdateBackup_Handler,
 		},
 		{
 			MethodName: "ReadVersion",
