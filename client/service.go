@@ -152,7 +152,7 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 	}
 	res, err := masterConn.GetLocation(ctx, &getLocationReq)
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
-		log.Fatalf("append file error:  %+v %+v", res, err)
+		log.Fatalf("Read file error:  %+v %+v", res, err)
 		if res.GetStatus().GetStatusCode() != 0 {
 			return nil, fmt.Errorf(res.GetStatus().GetErrorMessage())
 		}
@@ -185,7 +185,9 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 			count += 1
 		}
 	}
-
+	if count == 0{
+		fmt.Printf("error: no data to read, please check your input\n")
+	} 
 	data := make([][]byte, count)
 	for {
 		select {
