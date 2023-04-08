@@ -126,8 +126,8 @@ service ChunkServer {
 	rpc CreateChunk(CreateChunkReq) returns (CreateChunkResp) {}
 	rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkResp) {}
 	// Use Read Version to check who is new primary
-	rpc ChangeRole(ChangeRoleReq) returns (ChangeRoleResp) {}
-	rpc ChangePrimary(ChangePrimaryReq) returns (ChangePrimaryResp) {}
+	rpc ChangeToPrimary(ChangeToPrimaryReq) returns (ChangeToPrimaryResp) {}
+	rpc AssignNewPrimary(AssignNewPrimaryReq) returns (AssignNewPrimaryResp) {}
 	// Client -> ChunkServer
 	rpc ReadVersion(ReadVersionReq) returns (ReadVersionResp) {}
 	rpc Read(ReadReq) returns (ReadResp) {}
@@ -157,22 +157,22 @@ message CreateChunkResp {
 	Status status = 1;
 }
 
-message ChangeRoleReq {
+message ChangeToPrimaryReq {
 	string chunkHandle = 1;
 	uint32 role = 2;
 	repeated string peers = 3;
 }
 
-message ChangeRoleResp {
+message ChangeToPrimaryResp {
 	Status status = 1;
 }
 
-message ChangePrimaryReq {
+message AssignNewPrimaryReq {
 	string chunkHandle = 1;
 	string primary = 2;
 }
 
-message ChangePrimaryResp {
+message AssignNewPrimaryResp {
 	Status status = 1;
 }
 

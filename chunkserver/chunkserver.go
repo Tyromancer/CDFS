@@ -532,5 +532,44 @@ func (s *ChunkServer) SendGetVersion(chunkHandle string) {
 	default:
 		log.Println("SendGetVersion: should not get here")
 	}
+}
 
+// Fault Tolerance Functions
+
+// ChangeToPrimary will receive by backup chunk server, to notice it be the new Primary with certain chunk handle.
+func (s *ChunkServer) ChangeToPrimary(ctx context.Context, req *pb.ChangeToPrimaryReq) (res *pb.ChangeToPrimaryResp, err error) {
+	chunkHandle := req.GetChunkHandle()
+	//newRole := req.GetRole()
+	newPeers := req.GetPeers()
+
+	// check if the chunkhandle exist in the chunkserver
+	meta, ok := s.Chunks[chunkHandle]
+	if !ok {
+		res := &pb.ChangeToPrimaryResp{
+			Status: NewStatus(ERROR_CHUNK_NOT_EXISTS),
+		}
+		return res, nil
+	}
+	// Check if the chunk server is the primary
+	role := meta.Role
+	if role == Primary {
+		res := &pb.ChangeToPrimaryResp{
+			Status: NewStatus(ERROR_NOT_SECONDARY),
+		}
+		return res, nil
+	}
+	// Update the metadata
+	meta.MetaDataLock.Lock()
+	defer meta.MetaDataLock.Unlock()
+	meta.Role = Primary
+	meta.PeerAddress = newPeers
+	meta.PrimaryChunkServer = ""
+	if meta.GetVersionChannel != nil && !IsClose(meta.GetVersionChannel) {
+		close(meta.GetVersionChannel)
+		meta.GetVersionChannel = nil
+	}
+	res = &pb.ChangeToPrimaryResp{
+		Status: NewStatus(OK),
+	}
+	return res, nil
 }
