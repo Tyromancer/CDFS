@@ -118,27 +118,13 @@ func (s *ChunkServer) ForwardCreate(ctx context.Context, forwardCreateReq *pb.Fo
 		//return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
-	chunkLocation := path.Join(s.BasePath, chunkHandle)
-	err := CreateFile(chunkLocation)
+	err := s.createChunkFile(chunkHandle, forwardCreateReq.GetPrimary())
 	if err != nil {
 		res := NewForwardCreateResp(ERROR_CREATE_CHUNK_FAILED)
 		return res, nil
-		//return res, err
 	}
-	newChannel := make(chan string)
-	log.Println("creating get version channel")
-	newTimer := GetVersionTimer{
-		Srv:         s,
-		ChunkHandle: forwardCreateReq.GetChunkHandle(),
-		Timeout:     100,
-		Quit:        newChannel,
-	}
-
-	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: Secondary, PrimaryChunkServer: forwardCreateReq.GetPrimary(), PeerAddress: nil, Used: 0, Version: 0, GetVersionChannel: newChannel}
-	s.Chunks[chunkHandle] = &metadata
-
-	go newTimer.Trigger()
 	return NewForwardCreateResp(OK), nil
+
 }
 
 // DeleteChunk deletes the chunk metadata that corresponds with a string chunk handle on the primary
@@ -572,4 +558,62 @@ func (s *ChunkServer) ChangeToPrimary(ctx context.Context, req *pb.ChangeToPrima
 		Status: NewStatus(OK),
 	}
 	return res, nil
+}
+
+// AssignNewPrimary role to certain chunkhandle change the primary.
+func (s *ChunkServer) AssignNewPrimary(ctx context.Context, req *pb.AssignNewPrimaryReq) (res *pb.AssignNewPrimaryResp, err error) {
+	// Check Role, if chunkhandle exists
+	chunkHandle := req.GetChunkHandle()
+	newPrimary := req.GetPrimary()
+	meta, ok := s.Chunks[chunkHandle]
+	if ok {
+		role := meta.Role
+		if role == Primary {
+			res := &pb.AssignNewPrimaryResp{
+				Status: NewStatus(ERROR_NOT_SECONDARY),
+			}
+			return res, nil
+		}
+		// chunk server is backup
+		meta.MetaDataLock.Lock()
+		defer meta.MetaDataLock.Unlock()
+		meta.PrimaryChunkServer = newPrimary
+		res := &pb.AssignNewPrimaryResp{
+			Status: NewStatus(OK),
+		}
+		return res, nil
+	}
+	// Do not have the chunk
+	err = s.createChunkFile(chunkHandle, newPrimary)
+	if err != nil {
+		panic("failed to create new file on disk")
+	}
+	res = &pb.AssignNewPrimaryResp{
+		Status: NewStatus(OK),
+	}
+	return res, nil
+}
+
+func (s *ChunkServer) createChunkFile(chunkHandle string, primaryAddress string) error {
+	chunkLocation := path.Join(s.BasePath, chunkHandle)
+	err := CreateFile(chunkLocation)
+	if err != nil {
+		// res := NewForwardCreateResp(ERROR_CREATE_CHUNK_FAILED)
+		return err
+		//return res, err
+	}
+	newChannel := make(chan string)
+	log.Println("creating get version channel")
+	newTimer := GetVersionTimer{
+		Srv:         s,
+		ChunkHandle: chunkHandle,
+		Timeout:     100,
+		Quit:        newChannel,
+	}
+
+	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: Secondary, PrimaryChunkServer: primaryAddress, PeerAddress: nil, Used: 0, Version: 0, GetVersionChannel: newChannel}
+	s.Chunks[chunkHandle] = &metadata
+
+	go newTimer.Trigger()
+	return nil
 }
