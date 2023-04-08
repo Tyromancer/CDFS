@@ -11,12 +11,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+
 // RPC function
 
 func CreateFile(master string, filename string) {
 	conn, err := grpc.Dial(master, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("did not connect: %+v", err)
+		log.Fatalf("RPC connect error: %+v", err)
 	}
 	defer conn.Close()
 	masterConn := pb.NewMasterClient(conn)
@@ -26,12 +27,13 @@ func CreateFile(master string, filename string) {
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
 		log.Fatalf("create file error:  %+v %+v", res, err)
 	}
+	fmt.Println("Create file successs")
 }
 
 func DeleteFile(master string, filename string) {
 	conn, err := grpc.Dial(master, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("did not connect: %+v", err)
+		log.Fatalf("RPC connect error: %+v", err)
 	}
 	defer conn.Close()
 	masterConn := pb.NewMasterClient(conn)
@@ -41,12 +43,13 @@ func DeleteFile(master string, filename string) {
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
 		log.Fatalf("delete file error:  %+v %+v", res, err)
 	}
+	fmt.Println("Delete file successs")
 }
 
 func AppendFile(master string, filename string, data [][]byte, fileSize uint64) error {
 	conn, err := grpc.Dial(master, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("[%v] connect error: %+v", "master", err)
+		log.Printf("[%v] connect error: %+v\n", "master", err)
 		return err
 	}
 	defer conn.Close()
@@ -55,7 +58,7 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 	defer cancel()
 	reg, err := masterConn.GetToken(ctx, &pb.GetTokenReq{})
 	if err != nil {
-		log.Fatalf("[%v] client register error: %+v", "master", err)
+		log.Printf("[%v] client register error: %+v\n", "master", err)
 		return err
 	}
 	uuid := genUuid()
@@ -66,12 +69,12 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 	}
 	res, err := masterConn.AppendFile(ctx, &appendReq)
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
-		log.Fatalf("master append file error:  %+v %+v", res, err)
+		log.Printf("master append file error:  %+v %+v \n", res, err)
 		return err
 	}
 	primaryIps := res.GetPrimaryIP()
 	chunkHandles := res.GetChunkHandle()
-
+	log.Printf("Get response from master:\n primray Ips: %v", primaryIps)
 	chunkCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	successChan := make(chan int, len(chunkHandles))
@@ -86,12 +89,13 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 	for {
 		select {
 		case err := <-failChan:
-			fmt.Printf("append to chunk fail")
+			log.Printf("Append to chunk fail: %+v", err)
 			cancel()
 			return err
 		case <-successChan:
 			count += 1
 			if count == len(chunkHandles) {
+				fmt.Println("Append file sucess")
 				return nil
 			}
 		case <-time.After(5 * time.Second):
@@ -108,7 +112,7 @@ func appendToChunk(ctx context.Context, primaryIp string, chunkHandle string, da
 	csConn, err := grpc.Dial(primaryIp, grpc.WithInsecure())
 	defer csConn.Close()
 	if err != nil {
-		log.Fatalf("Failed to connect to chunk server")
+		log.Println("Failed to connect to chunk server")
 		failChan <- err
 		return
 	}
@@ -122,7 +126,7 @@ func appendToChunk(ctx context.Context, primaryIp string, chunkHandle string, da
 	csClient := pb.NewChunkServerClient(csConn)
 	appendDataRes, err := csClient.AppendData(ctx, appendDataReq)
 	if err != nil || appendDataRes.GetStatus().GetStatusCode() != 0 {
-		log.Fatalf("Error when calling append data: %+v", err)
+		log.Printf("Error append data to chunk: %+v \n", err)
 		failChan <- err
 	}
 	successChan <- 0
@@ -162,6 +166,8 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 	start := res.GetStart()
 	end := res.GetEnd()
 	dataChan := make(chan readResult, len(chunkInfos))
+	log.Println("Get response from master success")
+
 	count := 0
 	chunkCtx, cancel := context.WithCancel(context.Background())
 	for i := 0; i < len(chunkInfos); i++ {
