@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"path"
 	"sync"
 
@@ -456,8 +457,28 @@ func (s *ChunkServer) SendHeartBeat() {
 
 	peerClient := pb.NewMasterClient(peerConn)
 	res, err := peerClient.HeartBeat(context.Background(), &newHeartBeat)
-	if err != nil || res.GetStatus().GetStatusCode() != OK {
-		log.Println("HeartBeat Error: ", err)
+	// Check special flag for dead status
+	if err != nil { // connection error
+		log.Println("HeartBeat connection error: ", err)
+	}
+
+	// TODO: decide on which error code to use for this case
+	if res.GetStatus().GetStatusCode() != OK {
+		// remove all chunk meta from memory
+		for chunkHandle, meta := range s.Chunks {
+			meta.MetaDataLock.Lock()
+			defer meta.MetaDataLock.Unlock()
+			delete(s.Chunks, chunkHandle)
+		}
+
+		for clientToken, _ := range s.ClientLastResp {
+			delete(s.ClientLastResp, clientToken)
+		}
+		// remove all chunk file on disk
+		err = os.RemoveAll(s.BasePath)
+		if err != nil {
+			log.Printf("failed to remove file from disk: %v", err)
+		}
 	}
 	return
 }
