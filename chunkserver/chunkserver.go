@@ -617,3 +617,34 @@ func (s *ChunkServer) createChunkFile(chunkHandle string, primaryAddress string)
 	go newTimer.Trigger()
 	return nil
 }
+
+func (s *ChunkServer) UpdateBackup(ctx context.Context, req *pb.UpdateBackupReq) (*pb.UpdateBackupResp, error) {
+	chunkHandle := req.GetChunkHandle()
+	peers := req.GetPeers()
+
+	meta, ok := s.Chunks[chunkHandle]
+	if !ok {
+		res := &pb.UpdateBackupResp{
+			Status: NewStatus(ERROR_CHUNK_NOT_EXISTS),
+		}
+		return res, nil
+	}
+
+	role := meta.Role
+	if role != Primary {
+		res := &pb.UpdateBackupResp{
+			Status: NewStatus(ERROR_NOT_PRIMARY),
+		}
+		return res, nil
+	}
+
+	// server is primary, overwrite peers
+	meta.MetaDataLock.Lock()
+	defer meta.MetaDataLock.Unlock()
+
+	meta.PeerAddress = peers
+	res := &pb.UpdateBackupResp{
+		Status: NewStatus(OK),
+	}
+	return res, nil
+}
