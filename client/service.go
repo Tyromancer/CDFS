@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
-
 
 // RPC function
 
@@ -220,7 +220,7 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 	}
 }
 
-func getVersion(ctx context.Context, Ip string, handle string) (uint32, error) {
+func readVersion(ctx context.Context, Ip string, handle string) (uint32, error) {
 	var csConn *grpc.ClientConn
 	csConn, err := grpc.Dial(Ip, grpc.WithInsecure())
 	defer csConn.Close()
@@ -229,12 +229,15 @@ func getVersion(ctx context.Context, Ip string, handle string) (uint32, error) {
 		return 0, err
 	}
 	csClient := pb.NewChunkServerClient(csConn)
-	req := pb.GetVersionReq{
+	req := pb.ReadVersionReq{
 		ChunkHandle: handle,
 	}
-	res, err := csClient.GetVersion(ctx, &req)
+	res, err := csClient.ReadVersion(ctx, &req)
 	if err != nil {
 		return 0, err
+	}
+	if res.GetStatus().StatusCode != 0{
+		return 0, errors.New(res.GetStatus().GetErrorMessage())
 	}
 	return res.GetVersion(), nil
 }
@@ -243,11 +246,11 @@ func checkVersion(ctx context.Context, primaryIp string, backupIp string, handle
 	if primaryIp == backupIp {
 		return true
 	}
-	primaryVersion, err := getVersion(ctx, primaryIp, handle)
+	primaryVersion, err := readVersion(ctx, primaryIp, handle)
 	if err != nil {
 		return false
 	}
-	backupVersion, err := getVersion(ctx, backupIp, handle)
+	backupVersion, err := readVersion(ctx, backupIp, handle)
 	if err != nil {
 		return false
 	}
