@@ -7,6 +7,7 @@ import (
     "encoding/base32"
 	"context"
 	"log"
+	"errors"
 
 	"github.com/tyromancer/cdfs/pb"
 	"google.golang.org/grpc"
@@ -24,6 +25,7 @@ const (
 	ERROR_FAIL_TO_CONNECT_TO_CHUNKSERVER
 	ERROR_FAIL_TO_CREATE_CHUNK_WHEN_CREATEFILE
 	ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND
+	ERROR_DEAD_BECOME_ALIVE
 )
 
 const (
@@ -52,6 +54,8 @@ func ErrorCodeToString(e int32) string {
 		return "Error: encounter error when creating a chunk during create file"
 	case ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND:
 		return "Error: encounter error when creating a chunk during append"
+	case ERROR_DEAD_BECOME_ALIVE:
+		return "Error: dead chunkserver revive"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -86,6 +90,13 @@ type ClientInfo struct {
 
 }
 
+
+type ChunkServerChan struct {
+	isDead bool
+	channel chan *pb.HeartBeatPayload
+}
+
+
 // return the three(or less) chunkservers that have the lowest load given the ChunkServerLoad map
 func lowestThreeChunkServer(chunkServerLoad map[string]uint) []string {
 	var pairs []Pair
@@ -100,6 +111,31 @@ func lowestThreeChunkServer(chunkServerLoad map[string]uint) []string {
 	var res []string
 	// Find the three keys with the lowest values
 	for i := 0; i < 3 && i < len(pairs); i++ {
+		res = append(res, pairs[i].key)
+	}
+	return res
+}
+
+
+// return the three(or less) chunkservers that have the lowest load given the ChunkServerLoad map
+func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
+	var pairs []Pair
+	for k, v := range s.ChunkServerLoad {
+		handleMetaData := s.HandleToMeta[chunkHandle]
+		for _, each := range s.CSToHandle[k] {
+			if each != handleMetaData {
+				pairs = append(pairs, Pair{k, v})
+			}
+		}
+	}
+
+	// Sort the slice based on the values
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].value < pairs[j].value
+	})
+	var res []string
+	// Find the all keys with the lowest values
+	for i := 0; i < len(pairs); i++ {
 		res = append(res, pairs[i].key)
 	}
 	return res
@@ -180,7 +216,60 @@ func DeleteChunkHandle(primary string, chunkHandle string) error {
 }
 
 
+func checkVersion(backup[]string, handle string) (string, error) {
+	if len(backup) == 0{
+		return "", errors.New("no backup error")
+	}
+	version := -1
+	resIp := ""
+	for _, ip := range backup{
+		curVersion, err := readVersion(ip, handle)
+		if err != nil {
+			// Note: If readVersion resp err, keep check next one?
+			if version >= 0{
+				continue 
+			}
+		} else if(version < int(curVersion)){
+			resIp = ip
+		}
+	}
+	if version == -1{
+		return "", errors.New("no backup error")
+	}
+	return resIp, nil 
+}
 
+
+func readVersion(Ip string, handle string) (uint32, error) {
+	ctx := context.Background()
+	var csConn *grpc.ClientConn
+	csConn, err := grpc.Dial(Ip, grpc.WithInsecure())
+	defer csConn.Close()
+	if err != nil {
+		log.Fatalf("Failed to connect to chunk server: %+v", Ip)
+		return 0, err
+	}
+	csClient := pb.NewChunkServerClient(csConn)
+	req := pb.ReadVersionReq{
+		ChunkHandle: handle,
+	}
+	res, err := csClient.ReadVersion(ctx, &req)
+	if err != nil {
+		return 0, err
+	}
+	if res.GetStatus().StatusCode != 0{
+		return 0, errors.New(res.GetStatus().GetErrorMessage())
+	}
+	return res.GetVersion(), nil
+}
+
+func min(a int, b int) int {
+	if a <= b {
+		return a
+	} else {
+		return b
+	}
+}
 
 func NewCSRegisterResp(errorCode int32) *pb.CSRegisterResp {
 	return &pb.CSRegisterResp{
@@ -227,4 +316,10 @@ func NewDeleteStatus(errorCode int32) *pb.DeleteStatus {
 
 func NewAppendResultResp() *pb.AppendResultResp {
 	return &pb.AppendResultResp{}
+}
+
+func NewHeartBeatResp(errorCode int32) *pb.HeartBeatResp {
+	return &pb.HeartBeatResp{
+		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
+	}
 }
