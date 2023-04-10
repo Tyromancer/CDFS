@@ -324,12 +324,16 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 	}
 
 	// find the start location -> start chunk index & start offset in start chunk
-	startChunkIndex, startFinal := startLocation(allHandles, startOffSet)
+	startChunkIndex, startFinal, err := startLocation(allHandles, startOffSet)
+	if err != nil {
+		res := NewGetLocationResp(ERROR_READ_WRONG_OFFSET, nil, 0, 0)
+		return res, nil
+	}
 
 	// find the end location -> end chunk index & end offset in end chunk
 	endChunkIndex, endFinal, err := endLocation(allHandles, endOffSet)
 	if err != nil {
-		res := NewGetLocationResp(ERROR_READ_WRONG_OFFSET, nil, 0, 0)
+		res := NewGetLocationResp(ERROR_READ_WRONG_SIZE, nil, 0, 0)
 		return res, nil
 	}
 
