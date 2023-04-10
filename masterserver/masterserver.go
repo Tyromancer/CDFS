@@ -32,7 +32,7 @@ type MasterServer struct {
 	CSToHandle map[string][]*HandleMetaData
 
 	// a map record hearbeat channel
-	HeartBeatMap map[string]ChunkServerChan
+	HeartBeatMap map[string]*ChunkServerChan
 
 	// globally unique server name
 	ServerName string
@@ -93,10 +93,10 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 		case <-time.After(timeout):
 			//... no response
 			// chunk server is dead
-			chanStruct := s.HeartBeatMap[chunkServerName]
-			if !chanStruct.isDead {
+			//chanStruct := s.HeartBeatMap[chunkServerName]
+			if s.HeartBeatMap[chunkServerName].isDead {
 				s.handleChunkServerFailure(chunkServerName)
-				chanStruct.isDead = true
+				s.HeartBeatMap[chunkServerName].isDead = true
 			}
 		}
 	}
@@ -297,7 +297,7 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 	s.ChunkServerLoad[csName] = 0
 	s.CSToHandle[csName] = []*HandleMetaData{}
 	channel := make(chan ChunkServerInfo)
-	s.HeartBeatMap[csName] = ChunkServerChan{
+	s.HeartBeatMap[csName] = &ChunkServerChan{
 		isDead:  false,
 		channel: channel,
 	}
