@@ -82,7 +82,6 @@ message CreateResp {
     Status status = 1;
 }
 
-
 message Status {
 	int32 statusCode = 1;
 	string errorMessage = 2;
