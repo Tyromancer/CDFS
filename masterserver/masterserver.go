@@ -70,6 +70,9 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *p
 				load := 0
 				chunkServerName := heartBeatReq.GetName()
 				for i, each := range chunkHandles {
+					if _, ok := s.HandleToMeta[each]; !ok {
+						continue
+					}
 					if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
 						s.HandleToMeta[each].Used = uint(used[i])
 					}
