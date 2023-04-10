@@ -94,6 +94,7 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 			//... no response
 			// chunk server is dead
 			chanStruct := s.HeartBeatMap[chunkServerName]
+			log.Println("HeartBeat Timeout at ", chunkServerName)
 			if !chanStruct.isDead {
 				s.handleChunkServerFailure(chunkServerName)
 				chanStruct.isDead = true
@@ -104,7 +105,7 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 
 func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
 	chunkHandles := s.CSToHandle[chunkServerName]
-	//TODO: remove ChunkServer KV in CSToHandle map
+	log.Println("Start Handle Chunk Server Failure ", chunkServerName)
 	for _, each := range chunkHandles {
 		// if role primary
 		chunkHandle := each.ChunkHandle
@@ -120,7 +121,7 @@ func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
 
 func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName string) {
 	handleMeta := s.HandleToMeta[chunkHandle]
-
+	log.Println("Start Handle Backup Failure ", chunkServerName)
 	sortedWithoutChunk := s.lowestAllChunkServer(chunkHandle)
 	if len(sortedWithoutChunk) == 0 {
 		return
@@ -175,16 +176,22 @@ func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName s
 
 }
 func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName string) {
+	log.Printf("Start Handle Primary Failure at %s in %s", chunkHandle, chunkServerName)
 	handleMeta := s.HandleToMeta[chunkHandle]
 	backupSlice := handleMeta.BackupAddress
 	numBackup := len(backupSlice)
 	newPrimary, err := checkVersion(backupSlice, chunkHandle)
+	log.Println("Got new primary chunk server address: ", newPrimary)
 	if newPrimary == "" || err != nil {
 		// no backup
+		log.Println("No backup available")
+		log.Println("Got Error message: ", err)
 		return
 	}
 	sortedWithoutChunk := s.lowestAllChunkServer(chunkHandle)
+	log.Printf("Get Sorted chunk server length: %d", len(sortedWithoutChunk))
 	if len(sortedWithoutChunk) == 0 {
+		log.Println("No chunk server available")
 		return
 	}
 
@@ -201,6 +208,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 	c := pb.NewChunkServerClient(conn)
 	if numBackup == 1 {
 		// find 2
+		log.Println("Find 2 back up")
 		peers := sortedWithoutChunk[:min(len(sortedWithoutChunk), 2)]
 		req := &pb.ChangeToPrimaryReq{
 			ChunkHandle: chunkHandle,
@@ -234,6 +242,8 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 
 	} else {
 		// find 1
+		log.Println("Find one backup")
+		// Find old still available back up
 		var oldBackup string
 		for _, each := range backupSlice {
 			if each != newPrimary {
@@ -242,6 +252,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		}
 		newBackup := sortedWithoutChunk[0]
 		peers := []string{oldBackup, newBackup}
+		// Send request to change backup to new primary
 		req := &pb.ChangeToPrimaryReq{
 			ChunkHandle: chunkHandle,
 			Role:        0,
@@ -252,7 +263,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 			return
 		}
 
-		// tell new backup
+		// Send request to new backup
 		var conn *grpc.ClientConn
 		conn, err = grpc.Dial(newBackup, grpc.WithInsecure())
 		defer conn.Close()
@@ -267,6 +278,16 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		c.AssignNewPrimary(context.Background(), reqBackup)
 		// update mapping
 		s.CSToHandle[newBackup] = append(s.CSToHandle[newBackup], handleMeta)
+
+		// send request to old backup
+		var oldBackupConn *grpc.ClientConn
+		oldBackupConn, err := grpc.Dial(oldBackup, grpc.WithInsecure())
+		defer oldBackupConn.Close()
+		if err != nil {
+			return
+		}
+		oldBackupClient := pb.NewChunkServerClient(oldBackupConn)
+		oldBackupClient.AssignNewPrimary(context.Background(), reqBackup)
 
 		handleMeta.PrimaryChunkServer = newPrimary
 		handleMeta.BackupAddress = peers

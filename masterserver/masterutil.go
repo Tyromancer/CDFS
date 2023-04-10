@@ -124,10 +124,16 @@ func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
 	var pairs []Pair
 	for k, v := range s.ChunkServerLoad {
 		handleMetaData := s.HandleToMeta[chunkHandle]
+		hasChunk := false
 		for _, each := range s.CSToHandle[k] {
-			if each != handleMetaData {
-				pairs = append(pairs, Pair{k, v})
+			if each == handleMetaData {
+				//pairs = append(pairs, Pair{k, v})
+				hasChunk = true
+				break
 			}
+		}
+		if !hasChunk {
+			pairs = append(pairs, Pair{k, v})
 		}
 	}
 
@@ -140,6 +146,7 @@ func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
 	for i := 0; i < len(pairs); i++ {
 		res = append(res, pairs[i].key)
 	}
+	log.Println("Sorted Chunk Server by load result : ", res)
 	return res
 }
 
@@ -212,22 +219,26 @@ func DeleteChunkHandle(primary string, chunkHandle string) error {
 
 func checkVersion(backup []string, handle string) (string, error) {
 	if len(backup) == 0 {
+		log.Println("length of backup slice is 0")
 		return "", errors.New("no backup error")
 	}
 	version := -1
 	resIp := ""
 	for _, ip := range backup {
 		curVersion, err := readVersion(ip, handle)
+		log.Printf("Got version %d , at %s", curVersion, ip)
 		if err != nil {
 			// Note: If readVersion resp err, keep check next one?
 			if version >= 0 {
 				continue
 			}
 		} else if version < int(curVersion) {
+			version = int(curVersion)
 			resIp = ip
 		}
 	}
 	if version == -1 {
+		log.Println("version is -1")
 		return "", errors.New("no backup error")
 	}
 	return resIp, nil
