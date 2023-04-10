@@ -279,7 +279,6 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		// update mapping
 		s.CSToHandle[newBackup] = append(s.CSToHandle[newBackup], handleMeta)
 
-		// send request to old backup
 		var oldBackupConn *grpc.ClientConn
 		oldBackupConn, err := grpc.Dial(oldBackup, grpc.WithInsecure())
 		defer oldBackupConn.Close()
