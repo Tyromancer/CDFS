@@ -14,6 +14,14 @@ import (
 
 // RPC function
 
+var chunkRPCOpts = []grpc.DialOption{
+	grpc.WithDefaultCallOptions(
+		grpc.MaxCallRecvMsgSize(int(MaxRPCSize)),
+		grpc.MaxCallSendMsgSize(int(MaxRPCSize)),
+	),
+	grpc.WithTransportCredentials(insecure.NewCredentials()),
+}
+
 func CreateFile(master string, filename string) {
 	conn, err := grpc.Dial(master, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -109,7 +117,7 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 func appendToChunk(ctx context.Context, primaryIp string, chunkHandle string, data []byte, token string, successChan chan int, failChan chan error) {
 	// Create chunk server client to talk to chunk server
 	var csConn *grpc.ClientConn
-	csConn, err := grpc.Dial(primaryIp, grpc.WithInsecure())
+	csConn, err := grpc.Dial(primaryIp, chunkRPCOpts...)
 	defer csConn.Close()
 	if err != nil {
 		log.Println("Failed to connect to chunk server")
@@ -191,9 +199,9 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 			count += 1
 		}
 	}
-	if count == 0{
+	if count == 0 {
 		fmt.Printf("error: no data to read, please check your input\n")
-	} 
+	}
 	data := make([][]byte, count)
 	for {
 		select {
@@ -236,7 +244,7 @@ func readVersion(ctx context.Context, Ip string, handle string) (uint32, error) 
 	if err != nil {
 		return 0, err
 	}
-	if res.GetStatus().StatusCode != 0{
+	if res.GetStatus().StatusCode != 0 {
 		return 0, errors.New(res.GetStatus().GetErrorMessage())
 	}
 	return res.GetVersion(), nil
@@ -266,7 +274,7 @@ func readChunkData(ctx context.Context, index int, primaryIp string, backupIp st
 		queryIp = primaryIp
 	}
 	var csConn *grpc.ClientConn
-	csConn, err := grpc.Dial(queryIp, grpc.WithInsecure())
+	csConn, err := grpc.Dial(queryIp, chunkRPCOpts...)
 	defer csConn.Close()
 	if err != nil {
 		log.Fatalf("Failed to connect to chunk server: %+v", queryIp)
@@ -282,7 +290,7 @@ func readChunkData(ctx context.Context, index int, primaryIp string, backupIp st
 		dataChan <- readResult{err: err}
 		return
 	}
-	if res.GetStatus().GetStatusCode() != 0{
+	if res.GetStatus().GetStatusCode() != 0 {
 		log.Fatalf("Failed to read chunk server error: %+v", res.GetStatus().GetErrorMessage())
 		dataChan <- readResult{err: fmt.Errorf(res.GetStatus().GetErrorMessage())}
 		return
