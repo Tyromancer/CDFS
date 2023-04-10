@@ -124,10 +124,16 @@ func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
 	var pairs []Pair
 	for k, v := range s.ChunkServerLoad {
 		handleMetaData := s.HandleToMeta[chunkHandle]
+		hasChunk := false
 		for _, each := range s.CSToHandle[k] {
-			if each != handleMetaData {
-				pairs = append(pairs, Pair{k, v})
+			if each == handleMetaData {
+				//pairs = append(pairs, Pair{k, v})
+				hasChunk = true
+				break
 			}
+		}
+		if !hasChunk {
+			pairs = append(pairs, Pair{k, v})
 		}
 	}
 
@@ -224,6 +230,7 @@ func checkVersion(backup []string, handle string) (string, error) {
 				continue
 			}
 		} else if version < int(curVersion) {
+			version = int(curVersion)
 			resIp = ip
 		}
 	}

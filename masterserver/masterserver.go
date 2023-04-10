@@ -268,6 +268,15 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		// update mapping
 		s.CSToHandle[newBackup] = append(s.CSToHandle[newBackup], handleMeta)
 
+		var oldBackupConn *grpc.ClientConn
+		oldBackupConn, err := grpc.Dial(oldBackup, grpc.WithInsecure())
+		defer oldBackupConn.Close()
+		if err != nil {
+			return
+		}
+		oldBackupClient := pb.NewChunkServerClient(oldBackupConn)
+		oldBackupClient.AssignNewPrimary(context.Background(), reqBackup)
+
 		handleMeta.PrimaryChunkServer = newPrimary
 		handleMeta.BackupAddress = peers
 	}
