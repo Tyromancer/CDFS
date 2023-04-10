@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -16,7 +17,7 @@ import (
 func CreateFile(master string, filename string) {
 	conn, err := grpc.Dial(master, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("did not connect: %+v", err)
+		log.Fatalf("RPC connect error: %+v", err)
 	}
 	defer conn.Close()
 	masterConn := pb.NewMasterClient(conn)
@@ -26,12 +27,13 @@ func CreateFile(master string, filename string) {
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
 		log.Fatalf("create file error:  %+v %+v", res, err)
 	}
+	fmt.Println("Create file successs")
 }
 
 func DeleteFile(master string, filename string) {
 	conn, err := grpc.Dial(master, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("did not connect: %+v", err)
+		log.Fatalf("RPC connect error: %+v", err)
 	}
 	defer conn.Close()
 	masterConn := pb.NewMasterClient(conn)
@@ -41,12 +43,13 @@ func DeleteFile(master string, filename string) {
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
 		log.Fatalf("delete file error:  %+v %+v", res, err)
 	}
+	fmt.Println("Delete file successs")
 }
 
 func AppendFile(master string, filename string, data [][]byte, fileSize uint64) error {
 	conn, err := grpc.Dial(master, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("[%v] connect error: %+v", "master", err)
+		log.Printf("[%v] connect error: %+v\n", "master", err)
 		return err
 	}
 	defer conn.Close()
@@ -55,7 +58,7 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 	defer cancel()
 	reg, err := masterConn.GetToken(ctx, &pb.GetTokenReq{})
 	if err != nil {
-		log.Fatalf("[%v] client register error: %+v", "master", err)
+		log.Printf("[%v] client register error: %+v\n", "master", err)
 		return err
 	}
 	uuid := genUuid()
@@ -66,12 +69,12 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 	}
 	res, err := masterConn.AppendFile(ctx, &appendReq)
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
-		log.Fatalf("master append file error:  %+v %+v", res, err)
+		log.Printf("master append file error:  %+v %+v \n", res, err)
 		return err
 	}
 	primaryIps := res.GetPrimaryIP()
 	chunkHandles := res.GetChunkHandle()
-
+	log.Printf("Get response from master:\n primray Ips: %v", primaryIps)
 	chunkCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	successChan := make(chan int, len(chunkHandles))
@@ -86,12 +89,13 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 	for {
 		select {
 		case err := <-failChan:
-			fmt.Printf("append to chunk fail")
+			log.Printf("Append to chunk fail: %+v", err)
 			cancel()
 			return err
 		case <-successChan:
 			count += 1
 			if count == len(chunkHandles) {
+				fmt.Println("Append file sucess")
 				return nil
 			}
 		case <-time.After(5 * time.Second):
@@ -108,7 +112,7 @@ func appendToChunk(ctx context.Context, primaryIp string, chunkHandle string, da
 	csConn, err := grpc.Dial(primaryIp, grpc.WithInsecure())
 	defer csConn.Close()
 	if err != nil {
-		log.Fatalf("Failed to connect to chunk server")
+		log.Println("Failed to connect to chunk server")
 		failChan <- err
 		return
 	}
@@ -122,7 +126,7 @@ func appendToChunk(ctx context.Context, primaryIp string, chunkHandle string, da
 	csClient := pb.NewChunkServerClient(csConn)
 	appendDataRes, err := csClient.AppendData(ctx, appendDataReq)
 	if err != nil || appendDataRes.GetStatus().GetStatusCode() != 0 {
-		log.Fatalf("Error when calling append data: %+v", err)
+		log.Printf("Error append data to chunk: %+v \n", err)
 		failChan <- err
 	}
 	successChan <- 0
@@ -152,7 +156,7 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 	}
 	res, err := masterConn.GetLocation(ctx, &getLocationReq)
 	if err != nil || res.GetStatus().GetStatusCode() != 0 {
-		log.Fatalf("append file error:  %+v %+v", res, err)
+		log.Fatalf("Read file error:  %+v %+v", res, err)
 		if res.GetStatus().GetStatusCode() != 0 {
 			return nil, fmt.Errorf(res.GetStatus().GetErrorMessage())
 		}
@@ -166,6 +170,8 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 	log.Println("Received Master start: ", start)
 	log.Println("Received Master end: ", end)
 	dataChan := make(chan readResult, len(chunkInfos))
+	log.Println("Get response from master success")
+
 	count := 0
 	chunkCtx, cancel := context.WithCancel(context.Background())
 	for i := 0; i < len(chunkInfos); i++ {
@@ -191,7 +197,9 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 			count += 1
 		}
 	}
-
+	if count == 0{
+		fmt.Printf("error: no data to read, please check your input\n")
+	} 
 	data := make([][]byte, count)
 	for {
 		select {
@@ -218,7 +226,7 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 	}
 }
 
-func getVersion(ctx context.Context, Ip string, handle string) (uint32, error) {
+func readVersion(ctx context.Context, Ip string, handle string) (uint32, error) {
 	var csConn *grpc.ClientConn
 	csConn, err := grpc.Dial(Ip, grpc.WithInsecure())
 	defer csConn.Close()
@@ -227,12 +235,15 @@ func getVersion(ctx context.Context, Ip string, handle string) (uint32, error) {
 		return 0, err
 	}
 	csClient := pb.NewChunkServerClient(csConn)
-	req := pb.GetVersionReq{
+	req := pb.ReadVersionReq{
 		ChunkHandle: handle,
 	}
-	res, err := csClient.GetVersion(ctx, &req)
+	res, err := csClient.ReadVersion(ctx, &req)
 	if err != nil {
 		return 0, err
+	}
+	if res.GetStatus().StatusCode != 0{
+		return 0, errors.New(res.GetStatus().GetErrorMessage())
 	}
 	return res.GetVersion(), nil
 }
@@ -241,11 +252,11 @@ func checkVersion(ctx context.Context, primaryIp string, backupIp string, handle
 	if primaryIp == backupIp {
 		return true
 	}
-	primaryVersion, err := getVersion(ctx, primaryIp, handle)
+	primaryVersion, err := readVersion(ctx, primaryIp, handle)
 	if err != nil {
 		return false
 	}
-	backupVersion, err := getVersion(ctx, backupIp, handle)
+	backupVersion, err := readVersion(ctx, backupIp, handle)
 	if err != nil {
 		return false
 	}

@@ -1,14 +1,15 @@
 package testing
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
 	cs "github.com/tyromancer/cdfs/chunkserver"
+	"github.com/tyromancer/cdfs/client"
 	ms "github.com/tyromancer/cdfs/masterserver"
 	"github.com/tyromancer/cdfs/pb"
 	"google.golang.org/grpc"
@@ -19,23 +20,43 @@ const (
 )
 
 func NewChunkServer(t *testing.T, port uint32, msPort uint32) {
-	t.Log("Create New Chunk Server")
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	
+	// basePath := flag.String("path", "/CDFS", "base directory to store files")
+
+
+	// TODO: add command line argument checking
+
+	addr := fmt.Sprintf("%s:%d", "", port)
+	log.Println("Starting chunk server at ", addr)
+	lis, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("Failed to listen on port %d %v", port, err)
+		log.Fatalf("Failed to listen on port 12345 %v", err)
 	}
 
-	s := cs.ChunkServer{Chunks: make(map[string]*cs.ChunkMetaData), ClientLastResp: make(map[string]cs.RespMetaData), ServerName: fmt.Sprintf("localhost:%d", port), BasePath: t.TempDir(), HostName: "localhost", Port: port}
-
-	err = s.SendRegister()
-	if err != nil {
-		log.Fatalf("Failed to register on MS: %v", err)
+	s := cs.ChunkServer{
+		Chunks:         make(map[string]*cs.ChunkMetaData),
+		ClientLastResp: make(map[string]cs.RespMetaData),
+		ServerName:     cs.GetAddr("", port),
+		BasePath:       t.TempDir(),
+		HostName:       "localhost",
+		Port:           port,
+		MasterIP:       "",
+		MasterPort:     msPort,
+		Debug:          false,
+		DebugChan:      nil,
 	}
+
 	grpcServer := grpc.NewServer()
 	pb.RegisterChunkServerServer(grpcServer, &s)
 
+	// Register chunk server with Master
+	err = s.SendRegister()
+	if err != nil {
+		log.Fatalf("Cannot register chunk server with Master: %v", err)
+	}
+
 	if err = grpcServer.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve chunk server: %v", err)
+		log.Fatalf("Failed to serve chunk server gRPC on port 12345: %v", err)
 	}
 }
 
@@ -45,7 +66,8 @@ func NewMasterServer(t *testing.T, port uint32) {
 	if err != nil {
 		log.Fatalf("Failed to listen on port %d %v", port, err)
 	}
-	s := ms.MasterServer{Files: make(map[string][]ms.HandleMetaData), ChunkServerLoad: make(map[string]uint), ServerName: "SuperMaster", BasePath: ""}
+	s := ms.MasterServer{Files: make(map[string][]*ms.HandleMetaData), HandleToMeta: make(map[string]*ms.HandleMetaData), ChunkServerLoad: make(map[string]uint), ServerName: "SuperMaster", BasePath: ""}
+
 
 	grpcServer := grpc.NewServer()
 	pb.RegisterMasterServer(grpcServer, &s)
@@ -62,82 +84,32 @@ func TestChunkServerMasterIntegration(t *testing.T) {
 	go NewMasterServer(t, 8080)
 	time.Sleep(2 * time.Second)
 	go NewChunkServer(t, 12345, 8080)
+	go NewChunkServer(t, 12346, 8080)
+	go NewChunkServer(t, 12347, 8080)
+	go NewChunkServer(t, 12348, 8080)
 	time.Sleep(2 * time.Second)
 
-	// create client to talk to master
-	var conn *grpc.ClientConn
-	conn, err := grpc.Dial(":8080", grpc.WithInsecure())
+	filename := "test1"
+	master := "localhost:8080"
+	data := []byte("hello world!")
+	totalData := [][]byte{data}	
 
-	if err != nil {
-		log.Fatalf("Failed to connect to port 8080: %v", err)
+	client.CreateFile(master, filename)
+	err := client.AppendFile(master, filename, totalData, uint64(len(data)))
+	if err != nil{
+		t.Error(err)
+		t.FailNow()
 	}
 
-	defer conn.Close()
-
-	c := pb.NewMasterClient(conn)
-	req := &pb.CreateReq{FileName: "File1"}
-	res, err := c.Create(context.Background(), req)
-
-	if err != nil || res.GetStatus().GetStatusCode() != 0 {
-		t.Errorf("Error when calling create: %v", err)
+	readResult, err := client.ReadFile(master, filename, 0, uint32(len(data)))
+	if err != nil{
+		t.Error(err)
+		t.FailNow()
 	}
-
-	payload1 := []byte("hello world")
-	payload2 := []byte("goodbye world")
-
-	// call master append file rpc
-	appendFileReq := &pb.AppendFileReq{
-		FileName: "File1",
-		FileSize: 2 * ChunkSize,
+	if !reflect.DeepEqual(readResult, data){
+		t.Errorf("Read error expected: %v result: %v", data, readResult)
 	}
-
-	appendFileRes, err := c.AppendFile(context.Background(), appendFileReq)
-	if err != nil || appendFileRes.GetStatus().GetStatusCode() != 0 {
-		t.Errorf("Error when calling append file: %v", err)
-	}
-
-	primaryAddrs := appendFileRes.PrimaryIP
-	chunkHandles := appendFileRes.ChunkHandle
-
-	t.Log("Primary addrs is ", primaryAddrs)
-	t.Log("Chunk handles is ", chunkHandles)
-
-	if len(primaryAddrs) != 2 || len(primaryAddrs) != len(chunkHandles) {
-		t.Errorf("Expected 2 primary IP, got %d primary IP and %d chunk handles", len(primaryAddrs), len(chunkHandles))
-	}
-
-	// Create chunk server client to talk to chunk server
-	var csConn *grpc.ClientConn
-	csConn, err = grpc.Dial(":12345", grpc.WithInsecure())
-
-	if err != nil {
-		t.Errorf("Failed to connect to chunk server")
-	}
-	appendDataReq1 := &pb.AppendDataReq{
-		SeqNum:      0,
-		ChunkHandle: chunkHandles[0],
-		FileData:    payload1,
-		Token:       "Client#1",
-	}
-
-	appendDataReq2 := &pb.AppendDataReq{
-		SeqNum:      1,
-		ChunkHandle: chunkHandles[1],
-		FileData:    payload2,
-		Token:       "Client#1",
-	}
-
-	t.Logf("Got chunk handles %s, %s", chunkHandles[0], chunkHandles[1])
-
-	csClient := pb.NewChunkServerClient(csConn)
-	appendDataRes, err := csClient.AppendData(context.Background(), appendDataReq1)
-	if err != nil || appendDataRes.GetStatus().GetStatusCode() != 0 {
-		t.Errorf("Error when calling append data: %v", err)
-	}
-
-	appendDataRes, err = csClient.AppendData(context.Background(), appendDataReq2)
-	if err != nil || appendDataRes.GetStatus().GetStatusCode() != 0 {
-		t.Errorf("Error when calling append data: %v", err)
-	}
-
+	
+	client.DeleteFile(master, filename)
+	
 }
