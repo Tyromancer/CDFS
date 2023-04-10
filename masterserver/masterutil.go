@@ -89,9 +89,15 @@ type ClientInfo struct {
 	GetTokenResp *pb.GetTokenResp
 }
 
+type ChunkServerInfo struct {
+	ChunkHandle []string
+	Used        []uint32
+	Name        string
+}
+
 type ChunkServerChan struct {
 	isDead  bool
-	channel chan *pb.HeartBeatPayload
+	channel chan ChunkServerInfo
 }
 
 // return the three(or less) chunkservers that have the lowest load given the ChunkServerLoad map

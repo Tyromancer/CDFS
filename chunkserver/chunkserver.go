@@ -65,8 +65,9 @@ func (s *ChunkServer) SendRegister() error {
 
 // CreateChunk creates file on local filesystem that represents a chunk per Master Server's request
 func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.CreateChunkReq) (*pb.CreateChunkResp, error) {
+
 	chunkHandle := createChunkReq.GetChunkHandle()
-	log.Printf("received create chunk with %s", chunkHandle)
+
 	// check if chunk already exists
 	_, ok := s.Chunks[chunkHandle]
 	if ok {
@@ -79,12 +80,10 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	// For Master: when receive error, send deleteCreatedChunk message to all
 	if createChunkReq.GetRole() == Primary {
 		for _, peer := range createChunkReq.GetPeers() {
-			log.Printf("%+v", peer)
 			forwardErr := ForwardCreateReq(createChunkReq, peer)
 			if forwardErr != nil {
 				// abort create process and return error message
 				res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
-				log.Println("response fail1")
 				return res, nil
 				//return res, forwardErr
 			}
@@ -104,13 +103,14 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 
 	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0, Version: 0, GetVersionChannel: nil}
 	s.Chunks[chunkHandle] = &metadata
+
 	return NewCreateChunkResp(OK), nil
 }
 
 // ForwardCreate create new chunk as backup
 func (s *ChunkServer) ForwardCreate(ctx context.Context, forwardCreateReq *pb.ForwardCreateReq) (*pb.ForwardCreateResp, error) {
 	chunkHandle := forwardCreateReq.GetChunkHandle()
-	log.Printf("received forward create with %s", chunkHandle)
+
 	// check if chunk already exists
 	_, ok := s.Chunks[chunkHandle]
 	if ok {
@@ -436,20 +436,16 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 func (s *ChunkServer) SendHeartBeat() {
 
 	chunkLen := len(s.Chunks)
-	log.Printf("have %d chunks", chunkLen)
 	chunkHandles := make([]string, chunkLen)
 	usedSizes := make([]uint32, chunkLen)
 	i := 0
 	for chunkHandle, metaData := range s.Chunks {
-		log.Printf("i is %d", i)
 		//chunkHandles = append(chunkHandles, chunkHandle)
-		chunkHandles[i] = chunkHandle
 		//usedSizes = append(usedSizes, metaData.Used)
+		chunkHandles[i] = chunkHandle
 		usedSizes[i] = metaData.Used
 		i++
 	}
-	log.Println("Chunk handles: ", chunkHandles)
-	log.Println("Used sizes: ", usedSizes)
 	newHeartBeat := pb.HeartBeatPayload{
 		ChunkHandle: chunkHandles,
 		Used:        usedSizes,
@@ -556,6 +552,7 @@ func (s *ChunkServer) ChangeToPrimary(ctx context.Context, req *pb.ChangeToPrima
 	chunkHandle := req.GetChunkHandle()
 	//newRole := req.GetRole()
 	newPeers := req.GetPeers()
+	log.Println("Change to primary for ", chunkHandle, " with ", newPeers)
 
 	// check if the chunkhandle exist in the chunkserver
 	meta, ok := s.Chunks[chunkHandle]
@@ -594,6 +591,8 @@ func (s *ChunkServer) AssignNewPrimary(ctx context.Context, req *pb.AssignNewPri
 	// Check Role, if chunk handle exists
 	chunkHandle := req.GetChunkHandle()
 	newPrimary := req.GetPrimary()
+	log.Printf("Assign new primary for chunk %s with primary %s", chunkHandle, newPrimary)
+
 	meta, ok := s.Chunks[chunkHandle]
 	if ok {
 		role := meta.Role
