@@ -39,7 +39,8 @@ type MasterServer struct {
 
 	// base directory to store chunk files
 	BasePath string
-	HBMutex  sync.Mutex
+
+	HBMutex sync.Mutex
 }
 
 func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeatPayload) (*pb.HeartBeatResp, error) {
@@ -72,16 +73,10 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 			if chanStruct.isDead {
 				chanStruct.isDead = false
 			} else {
-				//chunkHandles := heartBeatReq.GetChunkHandle()
 				chunkHandles := heartBeatReq.ChunkHandle
-
-				//used := heartBeatReq.GetUsed()
 				used := heartBeatReq.Used
-
 				load := 0
-				//chunkServerName := heartBeatReq.GetName()
 				chunkServerName := heartBeatReq.Name
-
 				for i, each := range chunkHandles {
 					if _, ok := s.HandleToMeta[each]; !ok {
 						continue
@@ -98,7 +93,6 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 		case <-time.After(timeout):
 			//... no response
 			// chunk server is dead
-			log.Printf("no heartbeat recvd from %s", chunkServerName)
 			chanStruct := s.HeartBeatMap[chunkServerName]
 			if !chanStruct.isDead {
 				s.handleChunkServerFailure(chunkServerName)
@@ -109,9 +103,7 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 }
 
 func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
-	log.Printf("handling failure for server %s", chunkServerName)
 	chunkHandles := s.CSToHandle[chunkServerName]
-	log.Printf("%s got %d chunks", chunkServerName, len(chunkHandles))
 	//TODO: remove ChunkServer KV in CSToHandle map
 	for _, each := range chunkHandles {
 		// if role primary
@@ -127,7 +119,6 @@ func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
 }
 
 func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName string) {
-	log.Printf("handle backup failure for server %s with chunk %s", chunkServerName, chunkHandle)
 	handleMeta := s.HandleToMeta[chunkHandle]
 
 	sortedWithoutChunk := s.lowestAllChunkServer(chunkHandle)
@@ -184,20 +175,16 @@ func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName s
 
 }
 func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName string) {
-	log.Printf("handle primary failure for server %s with chunk %s", chunkServerName, chunkHandle)
-
 	handleMeta := s.HandleToMeta[chunkHandle]
 	backupSlice := handleMeta.BackupAddress
 	numBackup := len(backupSlice)
 	newPrimary, err := checkVersion(backupSlice, chunkHandle)
 	if newPrimary == "" || err != nil {
 		// no backup
-		log.Println("no backup found, return")
 		return
 	}
 	sortedWithoutChunk := s.lowestAllChunkServer(chunkHandle)
 	if len(sortedWithoutChunk) == 0 {
-		log.Println("no available cs found, return")
 		return
 	}
 
@@ -208,15 +195,12 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 	defer conn.Close()
 
 	if err != nil {
-		log.Println("failed to connect to new primary server")
 		return
 	}
 
 	c := pb.NewChunkServerClient(conn)
 	if numBackup == 1 {
 		// find 2
-		log.Println("only one backup, need to find two")
-
 		peers := sortedWithoutChunk[:min(len(sortedWithoutChunk), 2)]
 		req := &pb.ChangeToPrimaryReq{
 			ChunkHandle: chunkHandle,
@@ -250,8 +234,6 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 
 	} else {
 		// find 1
-		log.Println("two backups, need to find one")
-
 		var oldBackup string
 		for _, each := range backupSlice {
 			if each != newPrimary {
@@ -431,7 +413,6 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 
 	// update ChunkServer to HandleMetaData mapping
 	s.CSToHandle[primary] = append(s.CSToHandle[primary], &handleMeta)
-	log.Println("Now cs to handles is ", s.CSToHandle[primary])
 	for _, peer := range peers {
 		s.CSToHandle[peer] = append(s.CSToHandle[peer], &handleMeta)
 	}
