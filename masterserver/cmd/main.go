@@ -15,7 +15,7 @@ func main() {
 		log.Fatalf("Failed to listen on port 8080 %v", err)
 	}
 
-	s := ms.MasterServer{Files: make(map[string][]*ms.HandleMetaData), HandleToMeta: make(map[string]*ms.HandleMetaData), ChunkServerLoad: make(map[string]uint), ServerName: "SuperMaster", BasePath: ""}
+	s := ms.MasterServer{Files: make(map[string][]*ms.HandleMetaData), HandleToMeta: make(map[string]*ms.HandleMetaData), ChunkServerLoad: make(map[string]uint), ServerName: "SuperMaster", BasePath: "", CSToHandle: make(map[string][]*ms.HandleMetaData), HeartBeatMap: make(map[string]ms.ChunkServerChan)}
 
 	grpcServer := grpc.NewServer()
 	pb.RegisterMasterServer(grpcServer, &s)
