@@ -163,14 +163,21 @@ func startLocation(fileHandles []*HandleMetaData, startOffset uint32) []uint32 {
 
 // given endOffset and fileHandles, return [index of the last chunk, end offset of last chunk]
 func endtLocation(fileHandles []*HandleMetaData, endOffset uint32) []uint32 {
-	var curSize uint = 0
-	i := 0
-	for curSize+fileHandles[i].Used < uint(endOffset) {
-		curSize += fileHandles[i].Used
-		i++
+	if endOffset != 0 {
+		var curSize uint = 0
+		i := 0
+		for curSize+fileHandles[i].Used < uint(endOffset) {
+			curSize += fileHandles[i].Used
+			i++
+		}
+		end := endOffset - uint32(curSize)
+		return []uint32{uint32(i), end}
+	} else {
+		lastChunkIndex := len(fileHandles) - 1
+		lastChunkUsed := fileHandles[lastChunkIndex].Used
+		return []uint32{uint32(lastChunkIndex), uint32(lastChunkUsed)}
 	}
-	end := endOffset - uint32(curSize)
-	return []uint32{uint32(i), end}
+
 }
 
 /*

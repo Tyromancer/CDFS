@@ -310,7 +310,11 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 
 	var csInfoSlice []*pb.ChunkServerInfo
 	startOffSet := getLocationReq.GetOffset()
-	endOffSet := getLocationReq.GetSize() + startOffSet
+	endOffSet := getLocationReq.GetSize()
+	if endOffSet != 0 {
+		endOffSet += startOffSet
+	}
+
 	// Use the given FileName to get the corresponding chunk handles
 	fileName := getLocationReq.GetFileName()
 	allHandles, exist := s.Files[fileName]
