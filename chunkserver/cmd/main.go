@@ -41,7 +41,13 @@ func main() {
 		DebugChan:      nil,
 	}
 
-	grpcServer := grpc.NewServer()
+	maxSize := 64 * 1024 * 1024
+	serverOpts := []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(maxSize),
+		grpc.MaxSendMsgSize(maxSize),
+	}
+
+	grpcServer := grpc.NewServer(serverOpts...)
 	pb.RegisterChunkServerServer(grpcServer, &s)
 
 	// Register chunk server with Master
