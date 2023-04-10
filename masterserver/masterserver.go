@@ -66,15 +66,21 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *p
 				chanStruct.isDead = false
 			} else {
 				chunkHandles := heartBeatReq.GetChunkHandle()
+				log.Println("from ", chunkServerName, " chunk handles in hb: ", chunkHandles)
 				used := heartBeatReq.GetUsed()
 				load := 0
 				chunkServerName := heartBeatReq.GetName()
 				for i, each := range chunkHandles {
+					if _, ok := s.HandleToMeta[each]; !ok {
+						log.Printf("Chunk %s does not exist", each)
+						continue
+					}
 					if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
 						s.HandleToMeta[each].Used = uint(used[i])
 					}
 					load += int(used[i])
 				}
+				log.Printf("received hb from %s", chunkServerName)
 				s.ChunkServerLoad[chunkServerName] = uint(load)
 			}
 		case <-time.After(timeout):
@@ -274,7 +280,12 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 	// Register the ChunkServer
 	s.ChunkServerLoad[csName] = 0
 	s.CSToHandle[csName] = []*HandleMetaData{}
-
+	channel := make(chan *pb.HeartBeatPayload)
+	s.HeartBeatMap[csName] = ChunkServerChan{
+		isDead:  false,
+		channel: channel,
+	}
+	go s.detectHeartBeat(csName, channel)
 	return NewCSRegisterResp(OK), nil
 }
 

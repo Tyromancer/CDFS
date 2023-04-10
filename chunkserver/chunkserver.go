@@ -66,7 +66,7 @@ func (s *ChunkServer) SendRegister() error {
 // CreateChunk creates file on local filesystem that represents a chunk per Master Server's request
 func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.CreateChunkReq) (*pb.CreateChunkResp, error) {
 	chunkHandle := createChunkReq.GetChunkHandle()
-
+	log.Printf("received create chunk with %s", chunkHandle)
 	// check if chunk already exists
 	_, ok := s.Chunks[chunkHandle]
 	if ok {
@@ -110,7 +110,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 // ForwardCreate create new chunk as backup
 func (s *ChunkServer) ForwardCreate(ctx context.Context, forwardCreateReq *pb.ForwardCreateReq) (*pb.ForwardCreateResp, error) {
 	chunkHandle := forwardCreateReq.GetChunkHandle()
-
+	log.Printf("received forward create with %s", chunkHandle)
 	// check if chunk already exists
 	_, ok := s.Chunks[chunkHandle]
 	if ok {
@@ -436,12 +436,20 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 func (s *ChunkServer) SendHeartBeat() {
 
 	chunkLen := len(s.Chunks)
+	log.Printf("have %d chunks", chunkLen)
 	chunkHandles := make([]string, chunkLen)
 	usedSizes := make([]uint32, chunkLen)
+	i := 0
 	for chunkHandle, metaData := range s.Chunks {
-		chunkHandles = append(chunkHandles, chunkHandle)
-		usedSizes = append(usedSizes, metaData.Used)
+		log.Printf("i is %d", i)
+		//chunkHandles = append(chunkHandles, chunkHandle)
+		chunkHandles[i] = chunkHandle
+		//usedSizes = append(usedSizes, metaData.Used)
+		usedSizes[i] = metaData.Used
+		i++
 	}
+	log.Println("Chunk handles: ", chunkHandles)
+	log.Println("Used sizes: ", usedSizes)
 	newHeartBeat := pb.HeartBeatPayload{
 		ChunkHandle: chunkHandles,
 		Used:        usedSizes,
