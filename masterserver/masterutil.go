@@ -27,6 +27,7 @@ const (
 	ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND
 	ERROR_DEAD_BECOME_ALIVE
 	ERROR_READ_WRONG_OFFSET
+	ERROR_READ_WRONG_SIZE
 )
 
 const (
@@ -59,6 +60,8 @@ func ErrorCodeToString(e int32) string {
 		return "Error: dead chunkserver revive"
 	case ERROR_READ_WRONG_OFFSET:
 		return "Error: read the wrong offset"
+	case ERROR_READ_WRONG_SIZE:
+		return "Error: invalid read size"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -153,15 +156,18 @@ func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
 }
 
 // given startOffset and fileHandles, return [index of the start chunk, read offset of start chunk]
-func startLocation(fileHandles []*HandleMetaData, startOffset uint32) (uint32, uint32) {
+func startLocation(fileHandles []*HandleMetaData, startOffset uint32) (uint32, uint32, error) {
 	var curSize uint = 0
 	i := 0
 	for curSize+fileHandles[i].Used < uint(startOffset) {
 		curSize += fileHandles[i].Used
 		i++
+		if i >= len(fileHandles) {
+			return 0, 0, errors.New("invalid start offset")
+		}
 	}
 	start := startOffset - uint32(curSize)
-	return uint32(i), start
+	return uint32(i), start, nil
 }
 
 // given endOffset and fileHandles, return [index of the last chunk, end offset of last chunk]
