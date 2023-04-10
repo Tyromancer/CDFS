@@ -26,6 +26,7 @@ const (
 	ERROR_FAIL_TO_CREATE_CHUNK_WHEN_CREATEFILE
 	ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND
 	ERROR_DEAD_BECOME_ALIVE
+	ERROR_READ_WRONG_OFFSET
 )
 
 const (
@@ -56,6 +57,8 @@ func ErrorCodeToString(e int32) string {
 		return "Error: encounter error when creating a chunk during append"
 	case ERROR_DEAD_BECOME_ALIVE:
 		return "Error: dead chunkserver revive"
+	case ERROR_READ_WRONG_OFFSET:
+		return "Error: read the wrong offset"
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
@@ -150,7 +153,7 @@ func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
 }
 
 // given startOffset and fileHandles, return [index of the start chunk, read offset of start chunk]
-func startLocation(fileHandles []*HandleMetaData, startOffset uint32) []uint32 {
+func startLocation(fileHandles []*HandleMetaData, startOffset uint32) (uint32, uint32) {
 	var curSize uint = 0
 	i := 0
 	for curSize+fileHandles[i].Used < uint(startOffset) {
@@ -158,24 +161,28 @@ func startLocation(fileHandles []*HandleMetaData, startOffset uint32) []uint32 {
 		i++
 	}
 	start := startOffset - uint32(curSize)
-	return []uint32{uint32(i), start}
+	return uint32(i), start
 }
 
 // given endOffset and fileHandles, return [index of the last chunk, end offset of last chunk]
-func endtLocation(fileHandles []*HandleMetaData, endOffset uint32) []uint32 {
+func endLocation(fileHandles []*HandleMetaData, endOffset uint32) (uint32, uint32, error) {
 	if endOffset != 0 {
 		var curSize uint = 0
 		i := 0
 		for curSize+fileHandles[i].Used < uint(endOffset) {
 			curSize += fileHandles[i].Used
 			i++
+			if i >= len(fileHandles) {
+				return 0, 0, errors.New("Read offset invalid")
+			}
+
 		}
 		end := endOffset - uint32(curSize)
-		return []uint32{uint32(i), end}
+		return uint32(i), end, nil
 	} else {
 		lastChunkIndex := len(fileHandles) - 1
 		lastChunkUsed := fileHandles[lastChunkIndex].Used
-		return []uint32{uint32(lastChunkIndex), uint32(lastChunkUsed)}
+		return uint32(lastChunkIndex), uint32(lastChunkUsed), nil
 	}
 
 }
