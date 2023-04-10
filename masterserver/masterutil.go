@@ -1,13 +1,13 @@
 package masterserver
 
 import (
-	"fmt"
-	"sort"
-	"crypto/rand"
-    "encoding/base32"
 	"context"
-	"log"
+	"crypto/rand"
+	"encoding/base32"
 	"errors"
+	"fmt"
+	"log"
+	"sort"
 
 	"github.com/tyromancer/cdfs/pb"
 	"google.golang.org/grpc"
@@ -83,19 +83,22 @@ type Pair struct {
 
 type ClientInfo struct {
 	Token string
-	UUID string
+	UUID  string
 
 	// TODO: Save previous response
 	GetTokenResp *pb.GetTokenResp
-
 }
 
+type ChunkServerInfo struct {
+	ChunkHandle []string
+	Used        []uint32
+	Name        string
+}
 
 type ChunkServerChan struct {
-	isDead bool
-	channel chan *pb.HeartBeatPayload
+	isDead  bool
+	channel chan ChunkServerInfo
 }
-
 
 // return the three(or less) chunkservers that have the lowest load given the ChunkServerLoad map
 func lowestThreeChunkServer(chunkServerLoad map[string]uint) []string {
@@ -115,7 +118,6 @@ func lowestThreeChunkServer(chunkServerLoad map[string]uint) []string {
 	}
 	return res
 }
-
 
 // return the three(or less) chunkservers that have the lowest load given the ChunkServerLoad map
 func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
@@ -141,12 +143,11 @@ func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
 	return res
 }
 
-
 // given startOffset and fileHandles, return [index of the start chunk, read offset of start chunk]
 func startLocation(fileHandles []*HandleMetaData, startOffset uint32) []uint32 {
 	var curSize uint = 0
 	i := 0
-	for curSize + fileHandles[i].Used < uint(startOffset) {
+	for curSize+fileHandles[i].Used < uint(startOffset) {
 		curSize += fileHandles[i].Used
 		i++
 	}
@@ -154,13 +155,11 @@ func startLocation(fileHandles []*HandleMetaData, startOffset uint32) []uint32 {
 	return []uint32{uint32(i), start}
 }
 
-
-
 // given endOffset and fileHandles, return [index of the last chunk, end offset of last chunk]
 func endtLocation(fileHandles []*HandleMetaData, endOffset uint32) []uint32 {
 	var curSize uint = 0
 	i := 0
-	for curSize + fileHandles[i].Used < uint(endOffset) {
+	for curSize+fileHandles[i].Used < uint(endOffset) {
 		curSize += fileHandles[i].Used
 		i++
 	}
@@ -168,29 +167,25 @@ func endtLocation(fileHandles []*HandleMetaData, endOffset uint32) []uint32 {
 	return []uint32{uint32(i), end}
 }
 
-
-
-/* 
-Given the length and generate unique token. 
-For e.g. given 16 would generate a string token of length 24. 
-*/ 
+/*
+Given the length and generate unique token.
+For e.g. given 16 would generate a string token of length 24.
+*/
 func GenerateToken(length int) (string, error) {
-    // generate random bytes
-    bytes := make([]byte, length)
-    if _, err := rand.Read(bytes); err != nil {
-        return "", err
-    }
+	// generate random bytes
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
 
-    // encode as base64
-    token := base32.StdEncoding.EncodeToString(bytes)
+	// encode as base64
+	token := base32.StdEncoding.EncodeToString(bytes)
 
-    return token, nil
+	return token, nil
 }
 
-
-
-/* 
-helper function: given primary and chunkHandle, 
+/*
+helper function: given primary and chunkHandle,
 call DeleteChunk grpc to delete the chunk
 */
 func DeleteChunkHandle(primary string, chunkHandle string) error {
@@ -204,7 +199,7 @@ func DeleteChunkHandle(primary string, chunkHandle string) error {
 
 	c := pb.NewChunkServerClient(conn)
 	req := &pb.DeleteChunkReq{
-		ChunkHandle: chunkHandle, 
+		ChunkHandle: chunkHandle,
 	}
 	resp, err := c.DeleteChunk(context.Background(), req)
 
@@ -215,30 +210,28 @@ func DeleteChunkHandle(primary string, chunkHandle string) error {
 	return nil
 }
 
-
-func checkVersion(backup[]string, handle string) (string, error) {
-	if len(backup) == 0{
+func checkVersion(backup []string, handle string) (string, error) {
+	if len(backup) == 0 {
 		return "", errors.New("no backup error")
 	}
 	version := -1
 	resIp := ""
-	for _, ip := range backup{
+	for _, ip := range backup {
 		curVersion, err := readVersion(ip, handle)
 		if err != nil {
 			// Note: If readVersion resp err, keep check next one?
-			if version >= 0{
-				continue 
+			if version >= 0 {
+				continue
 			}
-		} else if(version < int(curVersion)){
+		} else if version < int(curVersion) {
 			resIp = ip
 		}
 	}
-	if version == -1{
+	if version == -1 {
 		return "", errors.New("no backup error")
 	}
-	return resIp, nil 
+	return resIp, nil
 }
-
 
 func readVersion(Ip string, handle string) (uint32, error) {
 	ctx := context.Background()
@@ -257,7 +250,7 @@ func readVersion(Ip string, handle string) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	if res.GetStatus().StatusCode != 0{
+	if res.GetStatus().StatusCode != 0 {
 		return 0, errors.New(res.GetStatus().GetErrorMessage())
 	}
 	return res.GetVersion(), nil
@@ -279,10 +272,10 @@ func NewCSRegisterResp(errorCode int32) *pb.CSRegisterResp {
 
 func NewGetLocationResp(errorCode int32, chunkInfo []*pb.ChunkServerInfo, start uint32, end uint32) *pb.GetLocationResp {
 	return &pb.GetLocationResp{
-		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, 
-		ChunkInfo: chunkInfo, 
-		Start: start, 
-		End: end,
+		Status:    &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
+		ChunkInfo: chunkInfo,
+		Start:     start,
+		End:       end,
 	}
 }
 
@@ -294,8 +287,8 @@ func NewCreateResp(errorCode int32) *pb.CreateResp {
 
 func NewAppendFileResp(errorCode int32, primaryIP []string, chunckHandle []string) *pb.AppendFileResp {
 	return &pb.AppendFileResp{
-		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}, 
-		PrimaryIP: primaryIP, 
+		Status:      &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
+		PrimaryIP:   primaryIP,
 		ChunkHandle: chunckHandle,
 	}
 }
@@ -306,13 +299,11 @@ func NewGetTokenResp(uniqueToken string) *pb.GetTokenResp {
 	}
 }
 
-
 func NewDeleteStatus(errorCode int32) *pb.DeleteStatus {
 	return &pb.DeleteStatus{
 		Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)},
 	}
 }
-
 
 func NewAppendResultResp() *pb.AppendResultResp {
 	return &pb.AppendResultResp{}

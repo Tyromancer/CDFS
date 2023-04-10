@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -38,25 +39,32 @@ type MasterServer struct {
 
 	// base directory to store chunk files
 	BasePath string
+
+	HBMutex sync.Mutex
 }
 
 func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeatPayload) (*pb.HeartBeatResp, error) {
 	chunkServerName := heartBeatReq.GetName()
 
 	chanStruct := s.HeartBeatMap[chunkServerName]
+	srvInfo := ChunkServerInfo{
+		ChunkHandle: append([]string{}, heartBeatReq.ChunkHandle...),
+		Used:        append([]uint32{}, heartBeatReq.Used...),
+		Name:        chunkServerName,
+	}
 	//1. check isdead
 	if s.HeartBeatMap[chunkServerName].isDead {
 		//2. if dead, revive
-		chanStruct.channel <- heartBeatReq
+		chanStruct.channel <- srvInfo
 		s.CSToHandle[chunkServerName] = []*HandleMetaData{}
 		return NewHeartBeatResp(ERROR_DEAD_BECOME_ALIVE), nil
 	}
 	//3. send message to detectHeartBeat
-	chanStruct.channel <- heartBeatReq
+	chanStruct.channel <- srvInfo
 	return NewHeartBeatResp(OK), nil
 }
 
-func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *pb.HeartBeatPayload) {
+func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan ChunkServerInfo) {
 	timeout := 500 * time.Millisecond
 	for {
 		select {
@@ -65,10 +73,10 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *p
 			if chanStruct.isDead {
 				chanStruct.isDead = false
 			} else {
-				chunkHandles := heartBeatReq.GetChunkHandle()
-				used := heartBeatReq.GetUsed()
+				chunkHandles := heartBeatReq.ChunkHandle
+				used := heartBeatReq.Used
 				load := 0
-				chunkServerName := heartBeatReq.GetName()
+				chunkServerName := heartBeatReq.Name
 				for i, each := range chunkHandles {
 					if _, ok := s.HandleToMeta[each]; !ok {
 						continue
@@ -78,7 +86,9 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *p
 					}
 					load += int(used[i])
 				}
+				s.HBMutex.Lock()
 				s.ChunkServerLoad[chunkServerName] = uint(load)
+				s.HBMutex.Unlock()
 			}
 		case <-time.After(timeout):
 			//... no response
@@ -277,7 +287,7 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 	// Register the ChunkServer
 	s.ChunkServerLoad[csName] = 0
 	s.CSToHandle[csName] = []*HandleMetaData{}
-	channel := make(chan *pb.HeartBeatPayload)
+	channel := make(chan ChunkServerInfo)
 	s.HeartBeatMap[csName] = ChunkServerChan{
 		isDead:  false,
 		channel: channel,
