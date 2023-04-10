@@ -32,7 +32,7 @@ type MasterServer struct {
 	CSToHandle map[string][]*HandleMetaData
 
 	// a map record hearbeat channel
-	HeartBeatMap map[string]ChunkServerChan
+	HeartBeatMap map[string]*ChunkServerChan
 
 	// globally unique server name
 	ServerName string
@@ -93,10 +93,10 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 		case <-time.After(timeout):
 			//... no response
 			// chunk server is dead
-			chanStruct := s.HeartBeatMap[chunkServerName]
-			if !chanStruct.isDead {
+			//chanStruct := s.HeartBeatMap[chunkServerName]
+			if s.HeartBeatMap[chunkServerName].isDead {
 				s.handleChunkServerFailure(chunkServerName)
-				chanStruct.isDead = true
+				s.HeartBeatMap[chunkServerName].isDead = true
 			}
 		}
 	}
@@ -268,6 +268,15 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		// update mapping
 		s.CSToHandle[newBackup] = append(s.CSToHandle[newBackup], handleMeta)
 
+		var oldBackupConn *grpc.ClientConn
+		oldBackupConn, err := grpc.Dial(oldBackup, grpc.WithInsecure())
+		defer oldBackupConn.Close()
+		if err != nil {
+			return
+		}
+		oldBackupClient := pb.NewChunkServerClient(oldBackupConn)
+		oldBackupClient.AssignNewPrimary(context.Background(), reqBackup)
+
 		handleMeta.PrimaryChunkServer = newPrimary
 		handleMeta.BackupAddress = peers
 	}
@@ -288,7 +297,7 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 	s.ChunkServerLoad[csName] = 0
 	s.CSToHandle[csName] = []*HandleMetaData{}
 	channel := make(chan ChunkServerInfo)
-	s.HeartBeatMap[csName] = ChunkServerChan{
+	s.HeartBeatMap[csName] = &ChunkServerChan{
 		isDead:  false,
 		channel: channel,
 	}
@@ -301,7 +310,11 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 
 	var csInfoSlice []*pb.ChunkServerInfo
 	startOffSet := getLocationReq.GetOffset()
-	endOffSet := getLocationReq.GetSize() + startOffSet
+	endOffSet := getLocationReq.GetSize()
+	if endOffSet != 0 {
+		endOffSet += startOffSet
+	}
+
 	// Use the given FileName to get the corresponding chunk handles
 	fileName := getLocationReq.GetFileName()
 	allHandles, exist := s.Files[fileName]
@@ -311,14 +324,14 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 	}
 
 	// find the start location -> start chunk index & start offset in start chunk
-	startLoc := startLocation(allHandles, startOffSet)
-	startChunkIndex := startLoc[0]
-	startFinal := startLoc[1]
+	startChunkIndex, startFinal := startLocation(allHandles, startOffSet)
 
 	// find the end location -> end chunk index & end offset in end chunk
-	endLoc := endtLocation(allHandles, endOffSet)
-	endChunkIndex := endLoc[0]
-	endFinal := endLoc[1]
+	endChunkIndex, endFinal, err := endLocation(allHandles, endOffSet)
+	if err != nil {
+		res := NewGetLocationResp(ERROR_READ_WRONG_OFFSET, nil, 0, 0)
+		return res, nil
+	}
 
 	toReadHandles := allHandles[startChunkIndex : endChunkIndex+1]
 	for _, handleMeta := range toReadHandles {
