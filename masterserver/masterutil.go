@@ -152,6 +152,7 @@ func (s *MasterServer) lowestAllChunkServer(chunkHandle string) []string {
 	for i := 0; i < len(pairs); i++ {
 		res = append(res, pairs[i].key)
 	}
+	log.Println("Sorted Chunk Server by load result : ", res)
 	return res
 }
 
@@ -238,12 +239,14 @@ func DeleteChunkHandle(primary string, chunkHandle string) error {
 
 func checkVersion(backup []string, handle string) (string, error) {
 	if len(backup) == 0 {
+		log.Println("length of backup slice is 0")
 		return "", errors.New("no backup error")
 	}
 	version := -1
 	resIp := ""
 	for _, ip := range backup {
 		curVersion, err := readVersion(ip, handle)
+		log.Printf("Got version %d , at %s", curVersion, ip)
 		if err != nil {
 			// Note: If readVersion resp err, keep check next one?
 			if version >= 0 {
@@ -255,6 +258,7 @@ func checkVersion(backup []string, handle string) (string, error) {
 		}
 	}
 	if version == -1 {
+		log.Println("version is -1")
 		return "", errors.New("no backup error")
 	}
 	return resIp, nil

@@ -151,14 +151,17 @@ func (s *ChunkServer) DeleteChunk(ctx context.Context, deleteReq *pb.DeleteChunk
 // is not recorded by the ChunkServer
 func (s *ChunkServer) ReadVersion(ctx context.Context, readVersion *pb.ReadVersionReq) (*pb.ReadVersionResp, error) {
 	chunkHandle := readVersion.GetChunkHandle()
+	log.Printf("Got read version request for chunk %s", chunkHandle)
 	meta, ok := s.Chunks[chunkHandle]
 	if !ok {
 		res := NewReadVersionResp(ERROR_CHUNK_NOT_EXISTS, nil)
+		log.Println("CHunk not exists")
 		return res, nil
 		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	versionNum := meta.Version
+	log.Printf("Current chunk Version is %d", versionNum)
 	res := NewReadVersionResp(OK, &versionNum)
 	return res, nil
 }
