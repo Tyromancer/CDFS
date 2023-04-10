@@ -66,13 +66,11 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *p
 				chanStruct.isDead = false
 			} else {
 				chunkHandles := heartBeatReq.GetChunkHandle()
-				log.Println("from ", chunkServerName, " chunk handles in hb: ", chunkHandles)
 				used := heartBeatReq.GetUsed()
 				load := 0
 				chunkServerName := heartBeatReq.GetName()
 				for i, each := range chunkHandles {
 					if _, ok := s.HandleToMeta[each]; !ok {
-						log.Printf("Chunk %s does not exist", each)
 						continue
 					}
 					if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
@@ -80,7 +78,6 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *p
 					}
 					load += int(used[i])
 				}
-				log.Printf("received hb from %s", chunkServerName)
 				s.ChunkServerLoad[chunkServerName] = uint(load)
 			}
 		case <-time.After(timeout):
