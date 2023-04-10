@@ -6,14 +6,13 @@ import (
 	"log"
 	"math"
 	"time"
-	
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/tyromancer/cdfs/pb"
 	cs "github.com/tyromancer/cdfs/chunkserver"
+	pb "github.com/tyromancer/cdfs/pb"
 )
 
 type MasterServer struct {
@@ -31,7 +30,7 @@ type MasterServer struct {
 	// a mapping from ChunkServer to all HandleMetaData it has
 	CSToHandle map[string][]*HandleMetaData
 
-	// a map record hearbeat channel 
+	// a map record hearbeat channel
 	HeartBeatMap map[string]ChunkServerChan
 
 	// globally unique server name
@@ -41,61 +40,60 @@ type MasterServer struct {
 	BasePath string
 }
 
-func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeatPayload) (*pb.HeartBeatResp, error){
+func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeatPayload) (*pb.HeartBeatResp, error) {
 	chunkServerName := heartBeatReq.GetName()
 
 	chanStruct := s.HeartBeatMap[chunkServerName]
 	//1. check isdead
 	if s.HeartBeatMap[chunkServerName].isDead {
-		//2. if dead, revive 
+		//2. if dead, revive
 		chanStruct.channel <- heartBeatReq
 		s.CSToHandle[chunkServerName] = []*HandleMetaData{}
 		return NewHeartBeatResp(ERROR_DEAD_BECOME_ALIVE), nil
 	}
 	//3. send message to detectHeartBeat
 	chanStruct.channel <- heartBeatReq
-	return NewHeartBeatResp(OK),nil
+	return NewHeartBeatResp(OK), nil
 }
 
-func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *pb.HeartBeatPayload){
+func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan *pb.HeartBeatPayload) {
 	timeout := 500 * time.Millisecond
 	for {
 		select {
-			case heartBeatReq := <-heartbeat:
-				chanStruct := s.HeartBeatMap[chunkServerName]
-				if chanStruct.isDead{
-					chanStruct.isDead = false		
-				}else{
-					chunkHandles := heartBeatReq.GetChunkHandle()
-					used := heartBeatReq.GetUsed()
-					load := 0
-					chunkServerName := heartBeatReq.GetName()
-					for i, each := range chunkHandles {
-						if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
-							s.HandleToMeta[each].Used = uint(used[i])
-						}
-						load += int(used[i])
+		case heartBeatReq := <-heartbeat:
+			chanStruct := s.HeartBeatMap[chunkServerName]
+			if chanStruct.isDead {
+				chanStruct.isDead = false
+			} else {
+				chunkHandles := heartBeatReq.GetChunkHandle()
+				used := heartBeatReq.GetUsed()
+				load := 0
+				chunkServerName := heartBeatReq.GetName()
+				for i, each := range chunkHandles {
+					if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
+						s.HandleToMeta[each].Used = uint(used[i])
 					}
-					s.ChunkServerLoad[chunkServerName] = uint(load)
+					load += int(used[i])
 				}
-			case <- time.After(timeout):
-				//... no response
-				// chunk server is dead
-				chanStruct := s.HeartBeatMap[chunkServerName]
-				if !chanStruct.isDead{
-					s.handleChunkServerFailure(chunkServerName)
-					chanStruct.isDead = true
-				}			
+				s.ChunkServerLoad[chunkServerName] = uint(load)
+			}
+		case <-time.After(timeout):
+			//... no response
+			// chunk server is dead
+			chanStruct := s.HeartBeatMap[chunkServerName]
+			if !chanStruct.isDead {
+				s.handleChunkServerFailure(chunkServerName)
+				chanStruct.isDead = true
+			}
 		}
 	}
 }
-
 
 func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
 	chunkHandles := s.CSToHandle[chunkServerName]
 	//TODO: remove ChunkServer KV in CSToHandle map
 	for _, each := range chunkHandles {
-		// if role primary 
+		// if role primary
 		chunkHandle := each.ChunkHandle
 		if each.PrimaryChunkServer == chunkServerName {
 			s.handlePrimaryFailure(chunkHandle, chunkServerName)
@@ -109,13 +107,13 @@ func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
 
 func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName string) {
 	handleMeta := s.HandleToMeta[chunkHandle]
-	
+
 	sortedWithoutChunk := s.lowestAllChunkServer(chunkHandle)
 	if len(sortedWithoutChunk) == 0 {
 		return
 	}
 	newBackup := sortedWithoutChunk[0]
-	
+
 	// tell new backup
 	var conn *grpc.ClientConn
 	conn, err := grpc.Dial(newBackup, grpc.WithInsecure())
@@ -126,7 +124,7 @@ func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName s
 	c := pb.NewChunkServerClient(conn)
 	reqBackup := &pb.AssignNewPrimaryReq{
 		ChunkHandle: chunkHandle,
-		Primary: handleMeta.PrimaryChunkServer,
+		Primary:     handleMeta.PrimaryChunkServer,
 	}
 	c.AssignNewPrimary(context.Background(), reqBackup)
 	// update mapping
@@ -155,10 +153,10 @@ func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName s
 	c = pb.NewChunkServerClient(conn2)
 	reqUpdateBackup := &pb.UpdateBackupReq{
 		ChunkHandle: chunkHandle,
-		Peers: newBackupSlice,
+		Peers:       newBackupSlice,
 	}
 	c.UpdateBackup(context.Background(), reqUpdateBackup)
-	
+
 	// update hanldeMetaData backup
 	handleMeta.BackupAddress = newBackupSlice
 
@@ -169,7 +167,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 	numBackup := len(backupSlice)
 	newPrimary, err := checkVersion(backupSlice, chunkHandle)
 	if newPrimary == "" || err != nil {
-		// no backup 
+		// no backup
 		return
 	}
 	sortedWithoutChunk := s.lowestAllChunkServer(chunkHandle)
@@ -192,15 +190,15 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		// find 2
 		peers := sortedWithoutChunk[:min(len(sortedWithoutChunk), 2)]
 		req := &pb.ChangeToPrimaryReq{
-			ChunkHandle: chunkHandle, 
-			Role: 0, 
-			Peers: peers,
+			ChunkHandle: chunkHandle,
+			Role:        0,
+			Peers:       peers,
 		}
 		res, _ := c.ChangeToPrimary(context.Background(), req)
 		if res.GetStatus().GetStatusCode() == cs.ERROR_CHUNK_NOT_EXISTS {
 			return
 		}
-		
+
 		// tell new backup
 		for _, peer := range peers {
 			var conn *grpc.ClientConn
@@ -212,7 +210,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 			c := pb.NewChunkServerClient(conn)
 			reqBackup := &pb.AssignNewPrimaryReq{
 				ChunkHandle: chunkHandle,
-				Primary: newPrimary,
+				Primary:     newPrimary,
 			}
 			c.AssignNewPrimary(context.Background(), reqBackup)
 			// update mapping
@@ -232,17 +230,15 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		newBackup := sortedWithoutChunk[0]
 		peers := []string{oldBackup, newBackup}
 		req := &pb.ChangeToPrimaryReq{
-			ChunkHandle: chunkHandle, 
-			Role: 0, 
-			Peers: peers,
+			ChunkHandle: chunkHandle,
+			Role:        0,
+			Peers:       peers,
 		}
 		res, _ := c.ChangeToPrimary(context.Background(), req)
 		if res.GetStatus().GetStatusCode() == cs.ERROR_CHUNK_NOT_EXISTS {
 			return
 		}
 
-	
-		
 		// tell new backup
 		var conn *grpc.ClientConn
 		conn, err = grpc.Dial(newBackup, grpc.WithInsecure())
@@ -253,7 +249,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		c := pb.NewChunkServerClient(conn)
 		reqBackup := &pb.AssignNewPrimaryReq{
 			ChunkHandle: chunkHandle,
-			Primary: newPrimary,
+			Primary:     newPrimary,
 		}
 		c.AssignNewPrimary(context.Background(), reqBackup)
 		// update mapping
@@ -263,7 +259,6 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		handleMeta.BackupAddress = peers
 	}
 }
-
 
 // chunk server <-> Master : ChunkServer Register, save the chunk server host and port
 func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegisterReq) (*pb.CSRegisterResp, error) {
@@ -279,7 +274,12 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 	// Register the ChunkServer
 	s.ChunkServerLoad[csName] = 0
 	s.CSToHandle[csName] = []*HandleMetaData{}
-	
+	channel := make(chan *pb.HeartBeatPayload)
+	s.HeartBeatMap[csName] = ChunkServerChan{
+		isDead:  false,
+		channel: channel,
+	}
+	go s.detectHeartBeat(csName, channel)
 	return NewCSRegisterResp(OK), nil
 }
 
@@ -307,7 +307,7 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 	endChunkIndex := endLoc[0]
 	endFinal := endLoc[1]
 
-	toReadHandles := allHandles[startChunkIndex:endChunkIndex+1]
+	toReadHandles := allHandles[startChunkIndex : endChunkIndex+1]
 	for _, handleMeta := range toReadHandles {
 		handle := handleMeta.ChunkHandle
 		primary := handleMeta.PrimaryChunkServer
@@ -318,9 +318,9 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 		}
 		backup := handleMeta.BackupAddress
 		newCSInfoMessage := &pb.ChunkServerInfo{
-			ChunkHandle: handle, 
-			PrimaryAddress: primary, 
-			BackupAddress: backup,
+			ChunkHandle:    handle,
+			PrimaryAddress: primary,
+			BackupAddress:  backup,
 		}
 		csInfoSlice = append(csInfoSlice, newCSInfoMessage)
 	}
@@ -328,9 +328,6 @@ func (s *MasterServer) GetLocation(ctx context.Context, getLocationReq *pb.GetLo
 	log.Printf("Find all the chunkservers to read given the FileName and ChunkIndex")
 	return NewGetLocationResp(OK, csInfoSlice, startFinal, endFinal), nil
 }
-
-
-
 
 // client -> Master Create file given the FileName
 func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb.CreateResp, error) {
@@ -378,13 +375,12 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 		return NewCreateResp(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN), nil
 	}
 
-
 	c := pb.NewChunkServerClient(conn)
 	req := &pb.CreateChunkReq{
-		ChunkHandle: chunkHandle, 
-		Role: 0, 
-		Primary: primary, 
-		Peers: peers,
+		ChunkHandle: chunkHandle,
+		Role:        0,
+		Primary:     primary,
+		Peers:       peers,
 	}
 	res, err := c.CreateChunk(context.Background(), req)
 
@@ -394,10 +390,10 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 
 	// update Files mapping
 	handleMeta := HandleMetaData{
-		ChunkHandle: chunkHandle, 
-		PrimaryChunkServer: primary, 
-		BackupAddress: peers, 
-		Used: 0,
+		ChunkHandle:        chunkHandle,
+		PrimaryChunkServer: primary,
+		BackupAddress:      peers,
+		Used:               0,
 	}
 	s.Files[fileName] = []*HandleMetaData{&handleMeta}
 	s.HandleToMeta[chunkHandle] = &handleMeta
@@ -408,13 +404,9 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 		s.CSToHandle[peer] = append(s.CSToHandle[peer], &handleMeta)
 	}
 
-	
 	return NewCreateResp(OK), nil
-	
 
 }
-
-
 
 // Client <-> Master : AppendFile request, given fileName and append size
 func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendFileReq) (*pb.AppendFileResp, error) {
@@ -500,9 +492,9 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 
 		c := pb.NewChunkServerClient(conn)
 		req := &pb.CreateChunkReq{
-			ChunkHandle: chunkHandle, 
-			Role: 0, 
-			Peers: peers,
+			ChunkHandle: chunkHandle,
+			Role:        0,
+			Peers:       peers,
 		}
 		res, err := c.CreateChunk(context.Background(), req)
 
@@ -516,10 +508,10 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 			used = uint(fileSize)
 		}
 		handleMeta := HandleMetaData{
-			ChunkHandle: chunkHandle, 
-			PrimaryChunkServer: primary, 
-			BackupAddress: peers, 
-			Used: used,
+			ChunkHandle:        chunkHandle,
+			PrimaryChunkServer: primary,
+			BackupAddress:      peers,
+			Used:               used,
 		}
 		// update mapping
 		s.Files[fileName] = append(s.Files[fileName], &handleMeta)
@@ -543,19 +535,18 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	return res, nil
 }
 
-/* 
+/*
 Client <-> Master : Master return a unique token for each client
 First message client send to master
 */
 func (s *MasterServer) GetToken(ctx context.Context, getTokenReq *pb.GetTokenReq) (*pb.GetTokenResp, error) {
 	token, err := GenerateToken(16)
 	if err != nil {
-        return NewGetTokenResp(""), status.Errorf(codes.NotFound, "Error when generating token")
-    }
+		return NewGetTokenResp(""), status.Errorf(codes.NotFound, "Error when generating token")
+	}
 	return NewGetTokenResp(token), nil
-	
-}
 
+}
 
 func (s *MasterServer) deleteCSToChunk(handleMeta *HandleMetaData, chunkServer string) {
 	sliceOfHandleMeta := s.CSToHandle[chunkServer]
@@ -569,9 +560,8 @@ func (s *MasterServer) deleteCSToChunk(handleMeta *HandleMetaData, chunkServer s
 	s.CSToHandle[chunkServer] = sliceOfHandleMeta
 }
 
-
 // Client <-> Master : Delete a file given the filename
-func (s *MasterServer) 	Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*pb.DeleteStatus, error) {
+func (s *MasterServer) Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*pb.DeleteStatus, error) {
 	fileName := deleteReq.GetFileName()
 	allHandles, exist := s.Files[fileName]
 	if !exist {
@@ -591,7 +581,6 @@ func (s *MasterServer) 	Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*p
 		}
 		// Use helper function to delete the chunk
 		err := DeleteChunkHandle(primary, chunkHandle)
-		
 
 		// delete chunkHandle mapping
 		delete(s.HandleToMeta, chunkHandle)
@@ -600,17 +589,15 @@ func (s *MasterServer) 	Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*p
 			DeleteChunkHandle(peer, chunkHandle)
 			s.deleteCSToChunk(handleMeta, peer)
 		}
-		
+
 		if err != nil {
 			res := NewDeleteStatus(ERROR_FAIL_TO_DELETE)
 			return res, nil
 		}
-	}	
+	}
 	res := NewDeleteStatus(OK)
 	return res, nil
 }
-
-
 
 // chunk server <-> Master : modify used and load based on append outcome
 func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.AppendResultReq) (*pb.AppendResultResp, error) {
@@ -621,14 +608,13 @@ func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.App
 	// if append fail, modify chunkMeta Used & chunkserver load
 	if statusCode != OK {
 		chunkMetaData := s.HandleToMeta[chunkHandle]
-		chunkMetaData.Used -= uint (size)
+		chunkMetaData.Used -= uint(size)
 		primary := chunkMetaData.PrimaryChunkServer
-		s.ChunkServerLoad[primary] -= uint (size)
+		s.ChunkServerLoad[primary] -= uint(size)
 		for i := 0; i < len(chunkMetaData.BackupAddress); i++ {
-			s.ChunkServerLoad[chunkMetaData.BackupAddress[i]] -= uint (size)
+			s.ChunkServerLoad[chunkMetaData.BackupAddress[i]] -= uint(size)
 		}
 	}
 
 	return NewAppendResultResp(), nil
 }
-
