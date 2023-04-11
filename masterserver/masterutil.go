@@ -31,6 +31,11 @@ const (
 )
 
 const (
+	DB_SET = iota
+	DB_DELETE
+)
+
+const (
 	ChunkSize = uint32(67108864)
 )
 

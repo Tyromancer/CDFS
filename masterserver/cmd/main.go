@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/go-redis/redis/v8"
 	"log"
 	"net"
 
@@ -27,7 +28,16 @@ func main() {
 		return
 	}
 
-	s := ms.MasterServer{Files: make(map[string][]*ms.HandleMetaData), HandleToMeta: make(map[string]*ms.HandleMetaData), ChunkServerLoad: make(map[string]uint), ServerName: "SuperMaster", BasePath: "", CSToHandle: make(map[string][]*ms.HandleMetaData), HeartBeatMap: make(map[string]*ms.ChunkServerChan)}
+	s := ms.MasterServer{
+		Files:           make(map[string][]*ms.HandleMetaData),
+		HandleToMeta:    make(map[string]*ms.HandleMetaData),
+		ChunkServerLoad: make(map[string]uint),
+		ServerName:      "SuperMaster",
+		BasePath:        "",
+		CSToHandle:      make(map[string][]*ms.HandleMetaData),
+		HeartBeatMap:    make(map[string]*ms.ChunkServerChan),
+		DB:              client,
+	}
 
 	// TODO: check if there is an available Database
 	// TODO: has database: regenerate HandleToMeta from Files map

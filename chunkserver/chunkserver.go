@@ -65,7 +65,6 @@ func (s *ChunkServer) SendRegister() error {
 
 // CreateChunk creates file on local filesystem that represents a chunk per Master Server's request
 func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.CreateChunkReq) (*pb.CreateChunkResp, error) {
-
 	chunkHandle := createChunkReq.GetChunkHandle()
 
 	// check if chunk already exists
@@ -80,10 +79,12 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	// For Master: when receive error, send deleteCreatedChunk message to all
 	if createChunkReq.GetRole() == Primary {
 		for _, peer := range createChunkReq.GetPeers() {
+			log.Printf("%+v", peer)
 			forwardErr := ForwardCreateReq(createChunkReq, peer)
 			if forwardErr != nil {
 				// abort create process and return error message
 				res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
+				log.Println("response fail1")
 				return res, nil
 				//return res, forwardErr
 			}
@@ -103,7 +104,6 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 
 	metadata := ChunkMetaData{ChunkLocation: chunkLocation, Role: createChunkReq.GetRole(), PrimaryChunkServer: "", PeerAddress: createChunkReq.Peers, Used: 0, Version: 0, GetVersionChannel: nil}
 	s.Chunks[chunkHandle] = &metadata
-
 	return NewCreateChunkResp(OK), nil
 }
 

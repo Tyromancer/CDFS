@@ -2,8 +2,10 @@ package masterserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-redis/redis/v8"
 	"log"
 	"math"
 	"sync"
@@ -19,6 +21,8 @@ import (
 
 type MasterServer struct {
 	pb.UnimplementedMasterServer
+
+	FileMutex sync.Mutex
 
 	// a mapping from File name to A slice of HandleMetaData
 	Files map[string][]*HandleMetaData
@@ -42,6 +46,54 @@ type MasterServer struct {
 	BasePath string
 
 	HBMutex sync.Mutex
+
+	DB *redis.Client
+}
+
+func (s *MasterServer) PersistState(filename string, operation int) {
+	isLocked := s.FileMutex.TryLock()
+	if !isLocked {
+		log.Printf("failed to acquire files lock")
+		return
+	}
+	defer s.FileMutex.Unlock()
+
+	var err error
+	if operation == DB_SET {
+		handles, ok := s.Files[filename]
+		if !ok {
+			log.Printf("%s not in masterserver.files")
+			return
+
+		}
+		serializedSlice, err := json.Marshal(handles)
+		if err != nil {
+			log.Printf("failed to marshal value with key %s", filename)
+			return
+		}
+		err = s.DB.HSet(context.Background(), "files", filename, serializedSlice).Err()
+	} else {
+		err = s.DB.HDel(context.Background(), "files", filename).Err()
+	}
+
+	if err != nil {
+		log.Printf("failed to do operation for %s", filename)
+		return
+	}
+
+	log.Printf("DB operation success for %s", filename)
+	//for key, val := range s.Files {
+	//	serializedSlice, err := json.Marshal(val)
+	//	if err != nil {
+	//		log.Printf("failed to marshal value with key %s", key)
+	//		return
+	//	}
+	//	err = s.DB.HSet(context.Background(), "files", key, serializedSlice).Err()
+	//	if err != nil {
+	//		log.Printf("failed to set value with key %s", key)
+	//		return
+	//	}
+	//}
 }
 
 func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeatPayload) (*pb.HeartBeatResp, error) {
@@ -71,6 +123,13 @@ func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeat
 		s.CSToHandle[chunkServerName] = newCSValue
 		s.ChunkServerLoad[chunkServerName] = uint(load)
 		s.HBMutex.Unlock()
+
+		channel <- ChunkServerInfo{
+			ChunkHandle: chunkHandles,
+			Used:        used,
+			Name:        chunkServerName,
+		}
+
 		return NewHeartBeatResp(OK), nil
 	}
 
@@ -455,7 +514,9 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 		BackupAddress:      peers,
 		Used:               0,
 	}
+
 	s.Files[fileName] = []*HandleMetaData{&handleMeta}
+	s.PersistState(fileName, DB_SET)
 	s.HandleToMeta[chunkHandle] = &handleMeta
 
 	// update ChunkServer to HandleMetaData mapping
@@ -575,6 +636,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		}
 		// update mapping
 		s.Files[fileName] = append(s.Files[fileName], &handleMeta)
+		s.PersistState(fileName, DB_SET)
 		s.HandleToMeta[chunkHandle] = &handleMeta
 		s.CSToHandle[primary] = append(s.CSToHandle[primary], &handleMeta)
 		for _, peer := range peers {
@@ -629,6 +691,7 @@ func (s *MasterServer) Delete(ctx context.Context, deleteReq *pb.DeleteReq) (*pb
 		return res, nil
 	}
 	delete(s.Files, fileName)
+	s.PersistState(fileName, DB_DELETE)
 
 	// for each loop to delete each chunk
 	for _, handleMeta := range allHandles {
