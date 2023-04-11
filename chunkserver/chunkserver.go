@@ -507,9 +507,12 @@ func (s *ChunkServer) SendGetVersion(chunkHandle string) {
 	}
 
 	res, err := primary.GetVersion(context.Background(), req)
+	if err != nil {
+		log.Printf("received err for get version: %v", err)
+	}
 	resStatusCode := res.GetStatus().GetStatusCode()
-	if err != nil || (resStatusCode != ERROR_VERSIONS_DO_NOT_MATCH && resStatusCode != OK) {
-		log.Printf("Received error for get version: %s", res.GetStatus().GetErrorMessage())
+	if resStatusCode != ERROR_VERSIONS_DO_NOT_MATCH && resStatusCode != OK {
+		log.Printf("Received error message for get version: %s", res.GetStatus().GetErrorMessage())
 	}
 
 	// check status code
@@ -552,6 +555,7 @@ func (s *ChunkServer) ChangeToPrimary(ctx context.Context, req *pb.ChangeToPrima
 	chunkHandle := req.GetChunkHandle()
 	//newRole := req.GetRole()
 	newPeers := req.GetPeers()
+	log.Println("rcvd change to primary for chunk ", chunkHandle, " with peers ", newPeers)
 
 	// check if the chunkhandle exist in the chunkserver
 	meta, ok := s.Chunks[chunkHandle]
@@ -590,6 +594,8 @@ func (s *ChunkServer) AssignNewPrimary(ctx context.Context, req *pb.AssignNewPri
 	// Check Role, if chunk handle exists
 	chunkHandle := req.GetChunkHandle()
 	newPrimary := req.GetPrimary()
+	log.Printf("rcvd assign new primary for chunk %s with primary %s", chunkHandle, newPrimary)
+
 	meta, ok := s.Chunks[chunkHandle]
 	if ok {
 		role := meta.Role

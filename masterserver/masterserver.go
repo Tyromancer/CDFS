@@ -190,7 +190,7 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 			//... no response
 			// chunk server is dead
 			//chanStruct := s.HeartBeatMap[chunkServerName]
-			if s.HeartBeatMap[chunkServerName].isDead {
+			if !s.HeartBeatMap[chunkServerName].isDead {
 				s.handleChunkServerFailure(chunkServerName)
 				s.HeartBeatMap[chunkServerName].isDead = true
 			}
