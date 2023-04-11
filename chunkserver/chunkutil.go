@@ -241,7 +241,7 @@ func NewPeerConn(address string) (*grpc.ClientConn, error) {
 }
 
 // ForwardCreateReq establishes a grpc.ClientConn with peer and forwards the pb.CreateChunkReq
-func ForwardCreateReq(req *pb.CreateChunkReq, peer string) error {
+func ForwardCreateReq(serverName string, req *pb.CreateChunkReq, peer string) error {
 	peerConn, err := NewPeerConn(peer)
 
 	if err != nil {
@@ -253,7 +253,7 @@ func ForwardCreateReq(req *pb.CreateChunkReq, peer string) error {
 	peerClient := pb.NewChunkServerClient(peerConn)
 	forwardReq := &pb.ForwardCreateReq{
 		ChunkHandle: req.ChunkHandle,
-		Primary:     req.Primary,
+		Primary:     serverName,
 	}
 
 	res, err := peerClient.ForwardCreate(context.Background(), forwardReq)

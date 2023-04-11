@@ -22,7 +22,9 @@ import (
 type MasterServer struct {
 	pb.UnimplementedMasterServer
 
-	FileMutex sync.Mutex
+	FileMutex            sync.Mutex
+	CSToHandleMutex      sync.Mutex
+	ChunkServerLoadMutex sync.Mutex
 
 	// a mapping from File name to A slice of HandleMetaData
 	Files map[string][]*HandleMetaData
@@ -553,18 +555,23 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	}
 	// Calculate the number of chunks to create to fit the append data
 	numChunkToADD := int(math.Ceil(float64(fileSize) / float64(ChunkSize)))
+	log.Printf("numChunkAdd is %d", numChunkToADD)
 	primarySlice := []string{}
 	chunkHandleSlice := []string{}
-	chunkHandle, err := GenerateToken(16)
+	//chunkHandle, err := GenerateToken(16)
+	//log.Printf("generated chunk handle: %s", chunkHandle)
 	// TODISC: how to handle the error
-	if err != nil {
-		return NewAppendFileResp(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN, []string{}, []string{}), nil
-	}
+	//if err != nil {
+	//	return NewAppendFileResp(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN, []string{}, []string{}), nil
+	//}
 
 	// if the last Chunk Used is 0 (One case is that the last chunk is just created from Create(), so empty chunk)
 	if lastHandleMeta.Used == 0 {
+		log.Printf("last handle meta used is 0")
 		// TODISC: Update the Used and ChunkServerLoad now or later
 		lastHandleMeta.Used = uint(ChunkSize)
+		log.Printf("last handle meta used now is %d", lastHandleMeta.Used)
+
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += uint(ChunkSize)
 		for i := 0; i < len(lastHandleMeta.BackupAddress); i++ {
 			s.ChunkServerLoad[lastHandleMeta.BackupAddress[i]] += uint(ChunkSize)
@@ -573,13 +580,29 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		numChunkToADD -= 1
 		fileSize -= ChunkSize
 		primarySlice = append(primarySlice, lastHandleMeta.PrimaryChunkServer)
-		chunkHandleSlice = append(chunkHandleSlice, chunkHandle)
+		//chunkHandleSlice = append(chunkHandleSlice, chunkHandle)
+		chunkHandleSlice = append(chunkHandleSlice, lastHandleMeta.ChunkHandle)
+
 	}
+
+	log.Printf("now chunk to add is %d", numChunkToADD)
+	workerChannels := make([]chan int32, numChunkToADD)
+	usedSlice := make([]uint, numChunkToADD)
+	for i := 0; i < numChunkToADD; i++ {
+		workerChannels[i] = make(chan int32)
+		if i == numChunkToADD-1 {
+			usedSlice[i] = uint(fileSize) - uint(ChunkSize)*uint(i)
+		} else {
+			usedSlice[i] = uint(ChunkSize)
+		}
+	}
+	var wg sync.WaitGroup
+	wg.Add(numChunkToADD)
 
 	for i := 0; i < numChunkToADD; i++ {
 		// Get the 3(or less) chunk server with lowest Used
 		lowestThree := lowestThreeChunkServer(s.ChunkServerLoad)
-
+		log.Println("lowest 3 is ", lowestThree)
 		// Get primary, if length 0 then no server available now
 		var primary string
 		if len(lowestThree) == 0 {
@@ -596,64 +619,82 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 			peers = []string{}
 		}
 
-		// Send grpc Create to Primary Chunk Server
-		var conn *grpc.ClientConn
-		conn, err := grpc.Dial(primary, grpc.WithInsecure())
-		defer conn.Close()
-
-		if err != nil {
-			return NewAppendFileResp(ERROR_FAIL_TO_CONNECT_TO_CHUNKSERVER, []string{}, []string{}), nil
-		}
-
 		chunkHandle, err := GenerateToken(16)
-		// TODISC: how to handle the error
 		if err != nil {
-			return NewAppendFileResp(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN, []string{}, []string{}), nil
+			res := NewAppendFileResp(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN, []string{}, []string{})
+			return res, nil
 		}
 
-		c := pb.NewChunkServerClient(conn)
-		req := &pb.CreateChunkReq{
-			ChunkHandle: chunkHandle,
-			Role:        0,
-			Peers:       peers,
+		go s.AppendWorker(fileName, fileSize, primary, peers, chunkHandle, usedSlice[i], workerChannels[i], &wg)
+		//// Send grpc Create to Primary Chunk Server
+		//var conn *grpc.ClientConn
+		//conn, err := grpc.Dial(primary, grpc.WithInsecure())
+		//defer conn.Close()
+		//
+		//if err != nil {
+		//	return NewAppendFileResp(ERROR_FAIL_TO_CONNECT_TO_CHUNKSERVER, []string{}, []string{}), nil
+		//}
+		//
+		//chunkHandle, err := GenerateToken(16)
+		//// TODISC: how to handle the error
+		//if err != nil {
+		//	return NewAppendFileResp(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN, []string{}, []string{}), nil
+		//}
+		//
+		//c := pb.NewChunkServerClient(conn)
+		//req := &pb.CreateChunkReq{
+		//	ChunkHandle: chunkHandle,
+		//	Role:        0,
+		//	Peers:       peers,
+		//}
+		//res, err := c.CreateChunk(context.Background(), req)
+		//
+		//if err != nil || res.GetStatus().StatusCode != OK {
+		//	return NewAppendFileResp(ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND, []string{}, []string{}), nil
+		//}
+		//
+		//// update Files and ChunkServerLoad mapping
+		//used := uint(ChunkSize)
+		//if fileSize < ChunkSize {
+		//	used = uint(fileSize)
+		//}
+		//handleMeta := HandleMetaData{
+		//	ChunkHandle:        chunkHandle,
+		//	PrimaryChunkServer: primary,
+		//	BackupAddress:      peers,
+		//	Used:               used,
+		//}
+		//// update mapping
+		//s.Files[fileName] = append(s.Files[fileName], &handleMeta)
+		//s.PersistState(fileName, DB_SET)
+		//s.HandleToMeta[chunkHandle] = &handleMeta
+		//s.CSToHandle[primary] = append(s.CSToHandle[primary], &handleMeta)
+		//for _, peer := range peers {
+		//	s.CSToHandle[peer] = append(s.CSToHandle[peer], &handleMeta)
+		//}
+		//
+		//s.ChunkServerLoad[handleMeta.PrimaryChunkServer] += used
+		//for i := 0; i < len(handleMeta.BackupAddress); i++ {
+		//	s.ChunkServerLoad[handleMeta.BackupAddress[i]] += used
+		//}
+		//// add primary and backup to slices which is used in AppendFileResp
+		//primarySlice = append(primarySlice, handleMeta.PrimaryChunkServer)
+		//chunkHandleSlice = append(chunkHandleSlice, chunkHandle)
+		//
+		//fileSize -= uint32(used)
+	}
+	wg.Wait()
+	log.Printf("done waiting")
+	for i := 0; i < numChunkToADD; i++ {
+		statusCode := <-workerChannels[i]
+		log.Printf("appendfile: got status %s", ErrorCodeToString(statusCode))
+		if statusCode != OK {
+			res := NewAppendFileResp(statusCode, []string{}, []string{})
+			return res, nil
 		}
-		res, err := c.CreateChunk(context.Background(), req)
-
-		if err != nil || res.GetStatus().StatusCode != OK {
-			return NewAppendFileResp(ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND, []string{}, []string{}), nil
-		}
-
-		// update Files and ChunkServerLoad mapping
-		used := uint(ChunkSize)
-		if fileSize < ChunkSize {
-			used = uint(fileSize)
-		}
-		handleMeta := HandleMetaData{
-			ChunkHandle:        chunkHandle,
-			PrimaryChunkServer: primary,
-			BackupAddress:      peers,
-			Used:               used,
-		}
-		// update mapping
-		s.Files[fileName] = append(s.Files[fileName], &handleMeta)
-		s.PersistState(fileName, DB_SET)
-		s.HandleToMeta[chunkHandle] = &handleMeta
-		s.CSToHandle[primary] = append(s.CSToHandle[primary], &handleMeta)
-		for _, peer := range peers {
-			s.CSToHandle[peer] = append(s.CSToHandle[peer], &handleMeta)
-		}
-
-		s.ChunkServerLoad[handleMeta.PrimaryChunkServer] += used
-		for i := 0; i < len(handleMeta.BackupAddress); i++ {
-			s.ChunkServerLoad[handleMeta.BackupAddress[i]] += used
-		}
-		// add primary and backup to slices which is used in AppendFileResp
-		primarySlice = append(primarySlice, handleMeta.PrimaryChunkServer)
-		chunkHandleSlice = append(chunkHandleSlice, chunkHandle)
-
-		fileSize -= uint32(used)
 	}
 	res := NewAppendFileResp(OK, primarySlice, chunkHandleSlice)
+	log.Printf("send result to client: %s", res.GetStatus().GetErrorMessage())
 	return res, nil
 }
 
@@ -727,10 +768,14 @@ func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.App
 	statusCode := appendResultReq.GetStatus().GetStatusCode()
 	chunkHandle := appendResultReq.GetChunkHandle()
 	size := appendResultReq.GetSize()
+	log.Printf("recvd append result for chunk %s", chunkHandle)
 
 	// if append fail, modify chunkMeta Used & chunkserver load
 	if statusCode != OK {
-		chunkMetaData := s.HandleToMeta[chunkHandle]
+		chunkMetaData, ok := s.HandleToMeta[chunkHandle]
+		if !ok {
+			log.Printf("chunk handle is not stored in memory")
+		}
 		chunkMetaData.Used -= uint(size)
 		primary := chunkMetaData.PrimaryChunkServer
 		s.ChunkServerLoad[primary] -= uint(size)
@@ -761,4 +806,68 @@ func (s *MasterServer) GenerateHandleToMetaMap() error {
 		}
 	}
 	return nil
+}
+
+func (s *MasterServer) AppendWorker(fileName string, fileSize uint32, primary string, peers []string, chunkHandle string, used uint, result chan int32, wg *sync.WaitGroup) {
+	//lowestThree := lowestThreeChunkServer(s.ChunkServerLoad)
+	defer func() {
+		wg.Done()
+		log.Printf("wg Done by 1")
+	}()
+	log.Printf("entered append worker for chunk %s with primary %s", chunkHandle, primary)
+	var conn *grpc.ClientConn
+	conn, err := grpc.Dial(primary, grpc.WithInsecure())
+	defer conn.Close()
+
+	if err != nil {
+		log.Printf("chunk %s: failed to connect to chunk server", chunkHandle)
+		result <- ERROR_FAIL_TO_CONNECT_TO_CHUNKSERVER
+		return
+	}
+
+	c := pb.NewChunkServerClient(conn)
+	req := &pb.CreateChunkReq{
+		ChunkHandle: chunkHandle,
+		Role:        0,
+		Peers:       peers,
+		Primary:     primary,
+	}
+	res, err := c.CreateChunk(context.Background(), req)
+	if err != nil || res.GetStatus().StatusCode != OK {
+		log.Printf("chunk %s: failed to create chunk", chunkHandle)
+
+		result <- ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND
+		return
+		//return NewAppendFileResp(ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND, []string{}, []string{}), nil
+	}
+	log.Printf("chunk %s: create chunk success", chunkHandle)
+
+	handleMeta := HandleMetaData{
+		ChunkHandle:        chunkHandle,
+		PrimaryChunkServer: primary,
+		BackupAddress:      peers,
+		Used:               used,
+	}
+
+	s.Files[fileName] = append(s.Files[fileName], &handleMeta)
+	//s.PersistState(fileName, DB_SET)
+	s.HandleToMeta[chunkHandle] = &handleMeta
+	log.Printf("chunk %s: begin acquire locks", chunkHandle)
+	s.CSToHandleMutex.Lock()
+	s.ChunkServerLoadMutex.Lock()
+	defer s.ChunkServerLoadMutex.Unlock()
+	defer s.CSToHandleMutex.Unlock()
+	log.Printf("chunk %s: acquired two locks", chunkHandle)
+
+	s.CSToHandle[primary] = append(s.CSToHandle[primary], &handleMeta)
+	for _, peer := range peers {
+		s.CSToHandle[peer] = append(s.CSToHandle[peer], &handleMeta)
+	}
+	s.ChunkServerLoad[handleMeta.PrimaryChunkServer] += used
+	for i := 0; i < len(handleMeta.BackupAddress); i++ {
+		s.ChunkServerLoad[handleMeta.BackupAddress[i]] += used
+	}
+	log.Printf("chunk %s: worker done", chunkHandle)
+	result <- OK
+	return
 }

@@ -14,6 +14,14 @@ import (
 
 // RPC function
 
+var chunkRPCOpts = []grpc.DialOption{
+	grpc.WithDefaultCallOptions(
+		grpc.MaxCallRecvMsgSize(int(MaxRPCSize)),
+		grpc.MaxCallSendMsgSize(int(MaxRPCSize)),
+	),
+	grpc.WithTransportCredentials(insecure.NewCredentials()),
+}
+
 func CreateFile(master string, filename string) {
 	conn, err := grpc.Dial(master, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -54,7 +62,7 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 	}
 	defer conn.Close()
 	masterConn := pb.NewMasterClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	reg, err := masterConn.GetToken(ctx, &pb.GetTokenReq{})
 	if err != nil {
@@ -109,7 +117,7 @@ func AppendFile(master string, filename string, data [][]byte, fileSize uint64) 
 func appendToChunk(ctx context.Context, primaryIp string, chunkHandle string, data []byte, token string, successChan chan int, failChan chan error) {
 	// Create chunk server client to talk to chunk server
 	var csConn *grpc.ClientConn
-	csConn, err := grpc.Dial(primaryIp, grpc.WithInsecure())
+	csConn, err := grpc.Dial(primaryIp, chunkRPCOpts...)
 	defer csConn.Close()
 	if err != nil {
 		log.Println("Failed to connect to chunk server")
@@ -266,7 +274,7 @@ func readChunkData(ctx context.Context, index int, primaryIp string, backupIp st
 		queryIp = primaryIp
 	}
 	var csConn *grpc.ClientConn
-	csConn, err := grpc.Dial(queryIp, grpc.WithInsecure())
+	csConn, err := grpc.Dial(queryIp, chunkRPCOpts...)
 	defer csConn.Close()
 	if err != nil {
 		log.Fatalf("Failed to connect to chunk server: %+v", queryIp)

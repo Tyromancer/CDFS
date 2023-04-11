@@ -80,7 +80,7 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	if createChunkReq.GetRole() == Primary {
 		for _, peer := range createChunkReq.GetPeers() {
 			log.Printf("%+v", peer)
-			forwardErr := ForwardCreateReq(createChunkReq, peer)
+			forwardErr := ForwardCreateReq(s.ServerName, createChunkReq, peer)
 			if forwardErr != nil {
 				// abort create process and return error message
 				res := NewCreateChunkResp(ERROR_CREATE_CHUNK_FAILED)
@@ -497,7 +497,7 @@ func (s *ChunkServer) SendGetVersion(chunkHandle string) {
 	primaryAddress := meta.PrimaryChunkServer
 	conn, err := NewPeerConn(primaryAddress)
 	if err != nil {
-		log.Println("SendGetVersion: failed to connect to primary at ", primaryAddress)
+		log.Println("SendGetVersion: failed to connect to primary at ", primaryAddress, " for chunk ", chunkHandle)
 		return
 	}
 	primary := pb.NewChunkServerClient(conn)
