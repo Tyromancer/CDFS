@@ -41,7 +41,7 @@ func main() {
 		DebugChan:      nil,
 	}
 
-	maxSize := 64 * 1024 * 1024
+	maxSize := 64*1024*1024 + 300
 	serverOpts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(maxSize),
 		grpc.MaxSendMsgSize(maxSize),

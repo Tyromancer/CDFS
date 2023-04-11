@@ -1,5 +1,5 @@
 package client
 
 const (
-	ChunkSize = uint32(67108864)
+	ChunkSize = uint32(64 * 1024 * 1024)
 )
