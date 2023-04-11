@@ -786,7 +786,7 @@ func (s *MasterServer) GenerateHandleToMetaMap() error {
 		for _, chunkMetaData := range fileChunkHandles {
 			chunkHandle := chunkMetaData.ChunkHandle
 			_, ok := s.HandleToMeta[chunkHandle]
-			if !ok {
+			if ok {
 				log.Println("Find a chunk handle twice")
 				return errors.New("find a duplicate chunk handle")
 			}
