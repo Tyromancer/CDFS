@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"github.com/go-redis/redis/v8"
 	"log"
 	"net"
 
@@ -14,6 +16,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen on port 8080 %v", err)
 	}
+	client := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	pong, err := client.Ping(client.Context()).Result()
+	fmt.Println(pong, err)
 
 	s := ms.MasterServer{Files: make(map[string][]*ms.HandleMetaData), HandleToMeta: make(map[string]*ms.HandleMetaData), ChunkServerLoad: make(map[string]uint), ServerName: "SuperMaster", BasePath: "", CSToHandle: make(map[string][]*ms.HandleMetaData), HeartBeatMap: make(map[string]*ms.ChunkServerChan)}
 
