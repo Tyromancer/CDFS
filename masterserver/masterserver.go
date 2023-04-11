@@ -2,6 +2,7 @@ package masterserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -48,15 +49,29 @@ func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeat
 
 	chanStruct, ok := s.HeartBeatMap[chunkServerName]
 	if !ok {
+		// Master get re-boot, receive heartbeat
 		channel := make(chan ChunkServerInfo)
 		s.HeartBeatMap[chunkServerName] = &ChunkServerChan{
 			isDead:  false,
 			channel: channel,
 		}
+		// TODO: Need to send message to channel or not?
 		go s.detectHeartBeat(chunkServerName, channel)
 		// TODO: set entry in CSToHandle
 		// TODO: set ChunkServerLoad
-
+		chunkHandles := heartBeatReq.GetChunkHandle()
+		used := heartBeatReq.GetUsed()
+		newCSValue := []*HandleMetaData{}
+		var load uint32
+		for i, chunkHandle := range chunkHandles {
+			newCSValue = append(newCSValue, s.HandleToMeta[chunkHandle])
+			load += used[i]
+		}
+		s.HBMutex.Lock()
+		s.CSToHandle[chunkServerName] = newCSValue
+		s.ChunkServerLoad[chunkServerName] = uint(load)
+		s.HBMutex.Unlock()
+		return NewHeartBeatResp(OK), nil
 	}
 
 	srvInfo := ChunkServerInfo{
@@ -64,7 +79,7 @@ func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeat
 		Used:        append([]uint32{}, heartBeatReq.Used...),
 		Name:        chunkServerName,
 	}
-	//1. check isdead
+	//1. check isdead, this chunk server just recover from a previous lost, treated as a new idle chunk server
 	if s.HeartBeatMap[chunkServerName].isDead {
 		//2. if dead, revive
 		chanStruct.channel <- srvInfo
@@ -662,4 +677,25 @@ func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.App
 	}
 
 	return NewAppendResultResp(), nil
+}
+
+// GenerateHandleToMetaMap: when master server re-boot from crash, generate the HandleToMeta map from Files map.
+func (s *MasterServer) GenerateHandleToMetaMap() error {
+	if len(s.Files) == 0 {
+		log.Println("There is no file")
+		return nil
+	}
+
+	for _, fileChunkHandles := range s.Files {
+		for _, chunkMetaData := range fileChunkHandles {
+			chunkHandle := chunkMetaData.ChunkHandle
+			_, ok := s.HandleToMeta[chunkHandle]
+			if !ok {
+				log.Println("Find a chunk handle twice")
+				return errors.New("find a duplicate chunk handle")
+			}
+			s.HandleToMeta[chunkHandle] = chunkMetaData
+		}
+	}
+	return nil
 }

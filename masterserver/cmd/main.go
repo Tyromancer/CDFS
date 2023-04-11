@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/go-redis/redis/v8"
 	"log"
 	"net"
 
@@ -29,6 +28,14 @@ func main() {
 	}
 
 	s := ms.MasterServer{Files: make(map[string][]*ms.HandleMetaData), HandleToMeta: make(map[string]*ms.HandleMetaData), ChunkServerLoad: make(map[string]uint), ServerName: "SuperMaster", BasePath: "", CSToHandle: make(map[string][]*ms.HandleMetaData), HeartBeatMap: make(map[string]*ms.ChunkServerChan)}
+
+	// TODO: check if there is an available Database
+	// TODO: has database: regenerate HandleToMeta from Files map
+	//err = s.GenerateHandleToMetaMap()
+	//if err != nil {
+	//	log.Println("Fail to reboot the master, received err: ", err)
+	//	return
+	//}
 
 	grpcServer := grpc.NewServer()
 	pb.RegisterMasterServer(grpcServer, &s)
