@@ -52,6 +52,11 @@ type MasterServer struct {
 	DB *redis.Client
 }
 
+func (s *MasterServer) PersistMetaData(chunkMetaData *HandleMetaData) {
+	fileName := chunkMetaData.FileName
+	s.PersistState(fileName, DB_SET)
+}
+
 func (s *MasterServer) PersistState(filename string, operation int) {
 	isLocked := s.FileMutex.TryLock()
 	if !isLocked {
@@ -170,7 +175,10 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 						continue
 					}
 					if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
-						s.HandleToMeta[each].Used = uint(used[i])
+						if s.HandleToMeta[each].Used != uint(used[i]) {
+							s.HandleToMeta[each].Used = uint(used[i])
+							s.PersistMetaData(s.HandleToMeta[each])
+						}
 					}
 					load += int(used[i])
 				}
@@ -263,6 +271,7 @@ func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName s
 
 	// update hanldeMetaData backup
 	handleMeta.BackupAddress = newBackupSlice
+	s.PersistMetaData(handleMeta)
 
 }
 func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName string) {
@@ -322,7 +331,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 		}
 		handleMeta.PrimaryChunkServer = newPrimary
 		handleMeta.BackupAddress = peers
-
+		s.PersistMetaData(handleMeta)
 	} else {
 		// find 1
 		var oldBackup string
@@ -370,6 +379,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 
 		handleMeta.PrimaryChunkServer = newPrimary
 		handleMeta.BackupAddress = peers
+		s.PersistMetaData(handleMeta)
 	}
 }
 
@@ -515,6 +525,7 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 		PrimaryChunkServer: primary,
 		BackupAddress:      peers,
 		Used:               0,
+		FileName:           fileName,
 	}
 
 	s.Files[fileName] = []*HandleMetaData{&handleMeta}
@@ -546,6 +557,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	if fileSize <= ChunkSize-uint32(lastHandleMeta.Used) {
 		// TODISC: Do I update the Used and ChunkServerLoad now or later
 		lastHandleMeta.Used += uint(fileSize)
+		s.PersistMetaData(lastHandleMeta)
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += uint(fileSize)
 		for i := 0; i < len(lastHandleMeta.BackupAddress); i++ {
 			s.ChunkServerLoad[lastHandleMeta.BackupAddress[i]] += uint(fileSize)
@@ -570,6 +582,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		log.Printf("last handle meta used is 0")
 		// TODISC: Update the Used and ChunkServerLoad now or later
 		lastHandleMeta.Used = uint(ChunkSize)
+		s.PersistMetaData(lastHandleMeta)
 		log.Printf("last handle meta used now is %d", lastHandleMeta.Used)
 
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += uint(ChunkSize)
@@ -645,9 +658,11 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 			PrimaryChunkServer: primary,
 			BackupAddress:      peers,
 			Used:               used,
+			FileName:           fileName,
 		}
 		// update mapping
 		s.Files[fileName] = append(s.Files[fileName], &handleMeta)
+		s.PersistState(fileName, DB_SET)
 		s.HandleToMeta[chunkHandle] = &handleMeta
 		s.CSToHandle[primary] = append(s.CSToHandle[primary], &handleMeta)
 		for _, peer := range peers {
@@ -749,6 +764,7 @@ func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.App
 			log.Printf("chunk handle is not stored in memory")
 		}
 		chunkMetaData.Used -= uint(size)
+		s.PersistMetaData(chunkMetaData)
 		primary := chunkMetaData.PrimaryChunkServer
 		s.ChunkServerLoad[primary] -= uint(size)
 		for i := 0; i < len(chunkMetaData.BackupAddress); i++ {
@@ -819,6 +835,7 @@ func (s *MasterServer) AppendWorker(fileName string, fileSize uint32, primary st
 		PrimaryChunkServer: primary,
 		BackupAddress:      peers,
 		Used:               used,
+		FileName:           fileName,
 	}
 
 	s.Files[fileName] = append(s.Files[fileName], &handleMeta)

@@ -84,6 +84,8 @@ type HandleMetaData struct {
 
 	// Already used size in bytes
 	Used uint
+
+	FileName string
 }
 
 // Pair represents a key-value pair. For sorting the map
