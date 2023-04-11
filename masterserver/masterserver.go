@@ -46,7 +46,19 @@ type MasterServer struct {
 func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeatPayload) (*pb.HeartBeatResp, error) {
 	chunkServerName := heartBeatReq.GetName()
 
-	chanStruct := s.HeartBeatMap[chunkServerName]
+	chanStruct, ok := s.HeartBeatMap[chunkServerName]
+	if !ok {
+		channel := make(chan ChunkServerInfo)
+		s.HeartBeatMap[chunkServerName] = &ChunkServerChan{
+			isDead:  false,
+			channel: channel,
+		}
+		go s.detectHeartBeat(chunkServerName, channel)
+		// TODO: set entry in CSToHandle
+		// TODO: set ChunkServerLoad
+
+	}
+
 	srvInfo := ChunkServerInfo{
 		ChunkHandle: append([]string{}, heartBeatReq.ChunkHandle...),
 		Used:        append([]uint32{}, heartBeatReq.Used...),
@@ -115,7 +127,10 @@ func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
 			s.handleBackupFailure(chunkHandle, chunkServerName)
 		}
 	}
+
+	// TODO: only clear value pair from CSToHandle, delete key from used map
 	delete(s.CSToHandle, chunkServerName)
+	delete(s.ChunkServerLoad, chunkServerName)
 }
 
 func (s *MasterServer) handleBackupFailure(chunkHandle string, chunkServerName string) {

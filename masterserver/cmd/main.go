@@ -22,8 +22,11 @@ func main() {
 		DB:       0,
 	})
 
-	pong, err := client.Ping(client.Context()).Result()
-	fmt.Println(pong, err)
+	_, err = client.Ping(client.Context()).Result()
+	if err != nil {
+		fmt.Printf("failed to connect to redis: %v", err)
+		return
+	}
 
 	s := ms.MasterServer{Files: make(map[string][]*ms.HandleMetaData), HandleToMeta: make(map[string]*ms.HandleMetaData), ChunkServerLoad: make(map[string]uint), ServerName: "SuperMaster", BasePath: "", CSToHandle: make(map[string][]*ms.HandleMetaData), HeartBeatMap: make(map[string]*ms.ChunkServerChan)}
 
