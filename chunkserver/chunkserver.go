@@ -438,9 +438,13 @@ func (s *ChunkServer) SendHeartBeat() {
 	chunkLen := len(s.Chunks)
 	chunkHandles := make([]string, chunkLen)
 	usedSizes := make([]uint32, chunkLen)
+	i := 0
 	for chunkHandle, metaData := range s.Chunks {
-		chunkHandles = append(chunkHandles, chunkHandle)
-		usedSizes = append(usedSizes, metaData.Used)
+		//chunkHandles = append(chunkHandles, chunkHandle)
+		//usedSizes = append(usedSizes, metaData.Used)
+		chunkHandles[i] = chunkHandle
+		usedSizes[i] = metaData.Used
+		i++
 	}
 	newHeartBeat := pb.HeartBeatPayload{
 		ChunkHandle: chunkHandles,
