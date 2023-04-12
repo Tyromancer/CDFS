@@ -119,11 +119,7 @@ type RespMetaData struct {
 // if end equals to 0, LoadChunk reads and returns the whole data starting from start, otherwise
 // it reads and returns (end - start) bytes
 func LoadChunk(path string, used uint32, start uint32, end uint32) ([]byte, error) {
-	log.Printf("ChunkLocation: %s", path)
-	log.Printf("Start at: %d", start)
-	log.Printf("End at: %d", end)
 	file, err := os.ReadFile(path)
-	log.Printf("length of file is %d", len(file))
 
 	if err != nil {
 		log.Printf("failed to read file: %v", err)

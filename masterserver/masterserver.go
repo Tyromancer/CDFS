@@ -387,7 +387,7 @@ func (s *MasterServer) handlePrimaryFailure(chunkHandle string, chunkServerName 
 func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegisterReq) (*pb.CSRegisterResp, error) {
 	csHost := csRegisterReq.GetHost()
 	csPort := csRegisterReq.GetPort()
-	csName := fmt.Sprintf("%s:%d", csHost, csPort)
+	csName := fmt.Sprintf("received register from %s:%d", csHost, csPort)
 	_, ok := s.ChunkServerLoad[csName]
 	// if the ChunkServer already registered
 	if ok {
@@ -567,23 +567,13 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	}
 	// Calculate the number of chunks to create to fit the append data
 	numChunkToADD := int(math.Ceil(float64(fileSize) / float64(ChunkSize)))
-	log.Printf("numChunkAdd is %d", numChunkToADD)
 	primarySlice := []string{}
 	chunkHandleSlice := []string{}
-	//chunkHandle, err := GenerateToken(16)
-	//log.Printf("generated chunk handle: %s", chunkHandle)
-	// TODISC: how to handle the error
-	//if err != nil {
-	//	return NewAppendFileResp(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN, []string{}, []string{}), nil
-	//}
 
 	// if the last Chunk Used is 0 (One case is that the last chunk is just created from Create(), so empty chunk)
 	if lastHandleMeta.Used == 0 {
-		log.Printf("last handle meta used is 0")
-		// TODISC: Update the Used and ChunkServerLoad now or later
 		lastHandleMeta.Used = uint(ChunkSize)
 		s.PersistMetaData(lastHandleMeta)
-		log.Printf("last handle meta used now is %d", lastHandleMeta.Used)
 
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += uint(ChunkSize)
 		for i := 0; i < len(lastHandleMeta.BackupAddress); i++ {
@@ -597,8 +587,6 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		chunkHandleSlice = append(chunkHandleSlice, lastHandleMeta.ChunkHandle)
 
 	}
-
-	log.Printf("now chunk to add is %d", numChunkToADD)
 
 	for i := 0; i < numChunkToADD; i++ {
 		// Get the 3(or less) chunk server with lowest Used
@@ -630,7 +618,6 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 		}
 
 		chunkHandle, err := GenerateToken(16)
-		// TODISC: how to handle the error
 		if err != nil {
 			return NewAppendFileResp(ERROR_FAIL_TO_GENERATE_UNIQUE_TOKEN, []string{}, []string{}), nil
 		}

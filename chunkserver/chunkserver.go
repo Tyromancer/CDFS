@@ -79,7 +79,6 @@ func (s *ChunkServer) CreateChunk(ctx context.Context, createChunkReq *pb.Create
 	// For Master: when receive error, send deleteCreatedChunk message to all
 	if createChunkReq.GetRole() == Primary {
 		for _, peer := range createChunkReq.GetPeers() {
-			log.Printf("%+v", peer)
 			forwardErr := ForwardCreateReq(s.ServerName, createChunkReq, peer)
 			if forwardErr != nil {
 				// abort create process and return error message
@@ -202,6 +201,7 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 	chunkHandle := appendReq.GetChunkHandle()
 	chunkMeta, ok := s.Chunks[chunkHandle]
 	appendSize := uint32(len(appendReq.FileData))
+	log.Printf("rcvd append data request for chunk %s", chunkHandle)
 	if ok {
 		role := chunkMeta.Role
 		if role != Primary {
@@ -211,23 +211,16 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 				log.Println("Send Append Result to Master: ", err)
 			}
 			return res, nil
-			//return res, errors.New(res.GetStatus().ErrorMessage)
 		}
 	} else {
 		//if chunk not exist
 		res := NewAppendDataResp(ERROR_APPEND_NOT_EXISTS)
-		//res := &pb.AppendDataResp{Status: &pb.Status{StatusCode: ERROR_APPEND_NOT_EXISTS, ErrorMessage: ErrorCodeToString(ERROR_APPEND_NOT_EXISTS)}}
-
-		//newResp := RespMetaData{LastID: newID, AppendResp: res, Err: errors.New(res.Status.ErrorMessage)}
-		//s.ClientLastResp[token] = newResp
 		err := sendAppendResult(chunkHandle, appendSize, res.GetStatus(), s.MasterIP, s.MasterPort, s.Debug)
 		if err != nil {
 			log.Println("Send Append Result to Master: ", err)
 		}
 
 		return res, nil
-		//return res, status.Errorf(codes.NotFound, "append not exists")
-		//return res, errors.New(res.GetStatus().ErrorMessage)
 	}
 
 	// chunk exist and current chunk server is the primary of target chunk handle
@@ -274,21 +267,11 @@ func (s *ChunkServer) AppendData(ctx context.Context, appendReq *pb.AppendDataRe
 			log.Println("Send Append Result to Master: ", err)
 		}
 		return res, nil
-		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	err := WriteFile(chunkMeta, fileData)
 	if err != nil {
 		panic("failed to write to disk")
-
-		//res := NewAppendDataResp(ERROR_APPEND_FAILED)
-		//newResp := RespMetaData{LastID: newID, AppendResp: res, Err: err}
-		//s.ClientLastResp[token] = newResp
-		//masterSendErr := sendAppendResult(chunkHandle, token, res.GetStatus(), s.MasterIP, s.MasterPort)
-		//if masterSendErr != nil {
-		//	log.Println("Send Append Result to Master: ", masterSendErr)
-		//}
-		//return res, err
 	}
 
 	res := NewAppendDataResp(OK)
@@ -332,7 +315,6 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 		// chunk not exist on server, return error message
 		res := NewReplicateResp(ERROR_REPLICATE_NOT_EXISTS, requestUUID)
 		return res, nil
-		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	// chunk exists on this server, check role
@@ -340,7 +322,6 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	if currentRole != Secondary {
 		res := NewReplicateResp(ERROR_NOT_SECONDARY, requestUUID)
 		return res, nil
-		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	// role is secondary (backup)
@@ -350,7 +331,6 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 		// return error (hopefully timer will fetch the latest data from primary)
 		res := NewReplicateResp(ERROR_VERSIONS_DO_NOT_MATCH, requestUUID)
 		return res, nil
-		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	} else if currentVersionNumber == dataVersionNumber-1 { // apply append
 		// append data to disk
 		chunkContent := replicateReq.GetFileData()
@@ -374,7 +354,6 @@ func (s *ChunkServer) Replicate(ctx context.Context, replicateReq *pb.ReplicateR
 	// return error
 	res := NewReplicateResp(ERROR_SHOULD_NOT_HAPPEN, requestUUID)
 	return res, nil
-	//return res, errors.New(res.GetStatus().GetErrorMessage())
 }
 
 func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (res *pb.GetVersionResp, err error) {
@@ -398,7 +377,6 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 		// indicate chunk was deleted
 		res := NewGetVersionResp(ERROR_CHUNK_NOT_EXISTS, nil, nil)
 		return res, nil
-		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	meta.MetaDataLock.Lock()
@@ -409,7 +387,6 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 	if role != Primary {
 		res := NewGetVersionResp(ERROR_NOT_PRIMARY, nil, nil)
 		return res, nil
-		//return res, errors.New(res.GetStatus().GetErrorMessage())
 	}
 
 	// check version
@@ -425,12 +402,8 @@ func (s *ChunkServer) GetVersion(ctx context.Context, req *pb.GetVersionReq) (re
 	if err != nil {
 		res := NewGetVersionResp(ERROR_READ_FAILED, nil, nil)
 		return res, nil
-		//return res, err
-
 	}
 	return NewGetVersionResp(ERROR_VERSIONS_DO_NOT_MATCH, &currentVersion, chunkData), nil
-
-	//return NewGetVersionResp(ERROR_VERSIONS_DO_NOT_MATCH, &currentVersion, chunkData), errors.New(ErrorCodeToString(ERROR_VERSIONS_DO_NOT_MATCH))
 }
 
 func (s *ChunkServer) SendHeartBeat() {
@@ -440,8 +413,6 @@ func (s *ChunkServer) SendHeartBeat() {
 	usedSizes := make([]uint32, chunkLen)
 	i := 0
 	for chunkHandle, metaData := range s.Chunks {
-		//chunkHandles = append(chunkHandles, chunkHandle)
-		//usedSizes = append(usedSizes, metaData.Used)
 		chunkHandles[i] = chunkHandle
 		usedSizes[i] = metaData.Used
 		i++
@@ -553,7 +524,6 @@ func (s *ChunkServer) SendGetVersion(chunkHandle string) {
 // ChangeToPrimary will receive by backup chunk server, to notice it be the new Primary with certain chunk handle.
 func (s *ChunkServer) ChangeToPrimary(ctx context.Context, req *pb.ChangeToPrimaryReq) (res *pb.ChangeToPrimaryResp, err error) {
 	chunkHandle := req.GetChunkHandle()
-	//newRole := req.GetRole()
 	newPeers := req.GetPeers()
 	log.Println("rcvd change to primary for chunk ", chunkHandle, " with peers ", newPeers)
 
