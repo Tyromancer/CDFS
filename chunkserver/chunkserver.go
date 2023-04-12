@@ -46,7 +46,7 @@ func (s *ChunkServer) SendRegister() error {
 	}
 	var conn *grpc.ClientConn
 
-	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", s.MasterIP, s.MasterPort), grpc.WithInsecure())
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", s.MasterIP, s.MasterPort), ClientOpts...)
 
 	if err != nil {
 		log.Fatalf("Failed to connect to Master %s:%d", s.MasterIP, s.MasterPort)

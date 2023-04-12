@@ -36,6 +36,14 @@ const (
 	ERROR_VERSIONS_DO_NOT_MATCH
 )
 
+var ClientOpts []grpc.DialOption = []grpc.DialOption{
+	grpc.WithDefaultCallOptions(
+		grpc.MaxCallRecvMsgSize(64*1024*1024+300),
+		grpc.MaxCallSendMsgSize(64*1024*1024+300),
+	),
+	grpc.WithInsecure(),
+}
+
 func ErrorCodeToString(e int32) string {
 	switch e {
 	case OK:
@@ -111,11 +119,14 @@ type RespMetaData struct {
 // if end equals to 0, LoadChunk reads and returns the whole data starting from start, otherwise
 // it reads and returns (end - start) bytes
 func LoadChunk(path string, used uint32, start uint32, end uint32) ([]byte, error) {
-	//log.Printf("ChunkLocation: %s", path)
-	//log.Printf("Start at: %d", start)
-	//log.Printf("End at: %d", end)
+	log.Printf("ChunkLocation: %s", path)
+	log.Printf("Start at: %d", start)
+	log.Printf("End at: %d", end)
 	file, err := os.ReadFile(path)
+	log.Printf("length of file is %d", len(file))
+
 	if err != nil {
+		log.Printf("failed to read file: %v", err)
 		return nil, err
 	}
 
@@ -123,6 +134,9 @@ func LoadChunk(path string, used uint32, start uint32, end uint32) ([]byte, erro
 		return file[start:], nil
 	}
 
+	if end > uint32(len(file)) {
+		return nil, errors.New("invalid read size")
+	}
 	return file[start:end], nil
 }
 
@@ -236,7 +250,7 @@ func NewGetVersionResp(errorCode int32, version *uint32, fileData []byte) *pb.Ge
 // NewPeerConn establishes and returns a grpc.ClientConn to the specified address
 func NewPeerConn(address string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
-	conn, err := grpc.Dial(address, grpc.WithInsecure())
+	conn, err := grpc.Dial(address, ClientOpts...)
 	return conn, err
 }
 

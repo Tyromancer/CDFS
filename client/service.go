@@ -179,7 +179,7 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 	count := 0
 	chunkCtx, cancel := context.WithCancel(context.Background())
 	for i := 0; i < len(chunkInfos); i++ {
-		s, e := uint32(0), ChunkSize
+		s, e := uint32(0), uint32(0)
 		primary := chunkInfos[i].GetPrimaryAddress()
 		backups := chunkInfos[i].GetBackupAddress()
 		handle := chunkInfos[i].GetChunkHandle()
