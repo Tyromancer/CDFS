@@ -50,6 +50,8 @@ type MasterServer struct {
 	HBMutex sync.Mutex
 
 	DB *redis.Client
+
+	AppendFileMutex sync.Mutex
 }
 
 func (s *MasterServer) PersistMetaData(chunkMetaData *HandleMetaData) {
@@ -544,6 +546,8 @@ func (s *MasterServer) Create(ctx context.Context, createReq *pb.CreateReq) (*pb
 
 // Client <-> Master : AppendFile request, given fileName and append size
 func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendFileReq) (*pb.AppendFileResp, error) {
+	s.AppendFileMutex.Lock()
+	defer s.AppendFileMutex.Unlock()
 	fileName := appendFileReq.GetFileName()
 	fileSize := appendFileReq.GetFileSize()
 	allHandleMeta, exist := s.Files[fileName]

@@ -6,8 +6,13 @@ import os
 import shutil
 import signal
 import logging
+import time
+import concurrent.futures
+import queue
+import threading
 
 from timeit import default_timer as timer
+from itertools import chain
 
 class Config:
     def __init__(self, ms_pid, cs_pids):
@@ -26,13 +31,14 @@ def remove_all(folder: str):
             print('Failed to delete %s. Reason: %s' % (file_path, e))
 
 def run_command(cmd: str):
-    process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
-    output, error = process.communicate()
+    process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, shell=False)
+    process.wait()
+    # output, error = process.communicate()
     
 def start_service(cmd: str) -> int:
     return subprocess.Popen(cmd.split()).pid
 
-def do_append(ms_addr: str, op_size: int) -> float:
+def do_append(ms_addr: str, filename: str, op_size: int) -> float:
     start = timer()
     cmd = f'./client -ms={ms_addr} -ops=append -filename={filename} -size={op_size * 1024 * 1024} -source=../client/data/{op_size}_mb.txt'
     run_command(cmd)
@@ -48,7 +54,7 @@ def do_create(ms_addr: str, filename: str):
     run_command(cmd)
     
     
-def setup(redis_port: int, num_chunkservers: int) -> Config:
+def setup(redis_port: int, num_chunkservers: int, path: str) -> Config:
     # connect to redis and clear state
     logging.info('clearing redis states')
     r = redis.Redis(
@@ -59,32 +65,51 @@ def setup(redis_port: int, num_chunkservers: int) -> Config:
     r.delete('files')
     
     logging.info('booting master server')
-    starting_port = 10000
+    starting_port = 12345
     ms_pid = start_service(f'../masterserver/cmd/main')
+    time.sleep(2)
+    
     
     logging.info('booting chunk servers')
     cs_pids = []
     for i in range(num_chunkservers):
         logging.info(f'booting chunk server #{i+1}')
         
-        cs_pid = start_service(f'../chunkserver/cmd/main --host localhost --port {starting_port + i} --path ~/CDFS{i+1} --mhost localhost --mport 8080 --hb 200')
+        cs_pid = start_service(f'../chunkserver/cmd/main --host localhost --port {starting_port + i} --path {path}/CDFS{i+1} --mhost localhost --mport 8080 --hb 200')
         cs_pids.append(cs_pid)
         
     return Config(ms_pid, cs_pids)
 
 
-def cleanup(config: Config):
+def cleanup(config: Config, path: str):
     os.kill(config.ms_pid, signal.SIGTERM)
     for i in range(len(config.cs_pids)):
         cs_pid = config.cs_pids[i]
         os.kill(cs_pid, signal.SIGTERM)
-        remove_all(f'~/CSFS{i+1}')
+        try:
+            remove_all(f'{path}/CDFS{i+1}')
+        except FileNotFoundError as e:
+            logging.warning(e)
         
         
     logging.info('killed master server and chunk servers')
+    
+    
+def client_worker(ms_addr: str, filename: str, operation: str, operation_size: int, op_iter: int, q: queue.Queue):
+    print(f'starting client with operation {operation}')
+    data_points = []
+    for _ in range(op_iter):
+        if operation.lower().strip() == 'append':
+            rtt = do_append(ms_addr, filename, operation_size)
+            print(f'rtt is {rtt}')
+            data_points.append(rtt)
+        elif operation.lower().strip() == 'read':
+            pass
 
+    q.put(data_points)
 
 if __name__ == '__main__':
+    logging.basicConfig()
     parser = argparse.ArgumentParser(description='CDFS latency test')
     parser.add_argument('--ms', type=str, help='addr of master server')
     parser.add_argument('--op', type=str, choices=['append', 'read'], help='mode of operation (append or read)')
@@ -92,6 +117,8 @@ if __name__ == '__main__':
     parser.add_argument('--iter', type=int, help='#iterations')
     parser.add_argument('--redis-port', type=int)
     parser.add_argument('--num_cs', type=int)
+    parser.add_argument('--path', type=str)
+    parser.add_argument('--num_client', type=int)
     
     args = parser.parse_args()
     
@@ -99,24 +126,48 @@ if __name__ == '__main__':
     operation_size = args.size
     ms_addr = args.ms
     op_iter = args.iter
-    filename = 'file1'
+    filename = 'file'
     redis_port = args.redis_port
     num_cs = args.num_cs
+    path = args.path
+    num_client = args.num_client
     
-    config = setup(redis_port, num_cs)
-    
+    config = setup(redis_port, num_cs, path)
+    time.sleep(2)
     data_points = []
     
+    q = queue.Queue()
+    threads = []
+    # do_create(ms_addr, filename)
+    for i in range(num_client):
+        do_create(ms_addr, f'{filename}{i+1}')
+    time.sleep(1)
+    for i in range(num_client):
+        t = threading.Thread(target=client_worker, name=f'thread{i}', args=[ms_addr, f'{filename}{i+1}', operation, operation_size, op_iter, q])
+        threads.append(t)
+        t.start()
     
-    if operation.lower().strip() == 'append':
-        do_create(ms_addr, filename)
-        for _ in range(op_iter):
-            rtt = do_append(ms_addr, operation_size)
-            data_points.append(rtt)
-            pass
-        pass
-    elif operation.lower().strip() == 'read':
-        pass
+    for i in range(len(threads)):
+        t = threads[i]
+        t.join()
+        pts = q.get()
+        print(f'pts is {pts}')
+        data_points.append(pts)
+    # with concurrent.futures.ThreadPoolExecutor() as executor:
+    #     futures = [executor.submit(client_worker, ms_addr, filename, operation, operation_size // num_client, op_iter) for _ in range(num_client)]
+    
+    # data_points = [f.result() for f in futures]
+    data_points = list(chain(*data_points))
+    # if operation.lower().strip() == 'append':
+    #     do_create(ms_addr, filename)
+    #     time.sleep(1)
+    #     for _ in range(op_iter):
+    #         rtt = do_append(ms_addr, filename, operation_size)
+    #         data_points.append(rtt)
+    #         pass
+    #     pass
+    # elif operation.lower().strip() == 'read':
+    #     pass
 
 
     avg = statistics.mean(data_points)
@@ -124,4 +175,4 @@ if __name__ == '__main__':
     stddev = statistics.stdev(data_points)
     print(f'result: avg={avg}, med={med}, stdev={stddev}')    
     
-    cleanup(config)
+    # cleanup(config, path)
