@@ -50,6 +50,8 @@ type MasterServer struct {
 
 	HBMutex sync.Mutex
 
+	CSRegisterMutex sync.Mutex
+
 	DB *redis.Client
 
 	AppendFileMutex sync.Mutex
@@ -400,6 +402,7 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 		return res, nil
 	}
 	// Register the ChunkServer
+	s.CSRegisterMutex.Lock()
 	s.ChunkServerLoad[csName] = 0
 	s.CSToHandle[csName] = []*HandleMetaData{}
 	channel := make(chan ChunkServerInfo)
@@ -407,6 +410,7 @@ func (s *MasterServer) CSRegister(ctx context.Context, csRegisterReq *pb.CSRegis
 		isDead:  false,
 		channel: channel,
 	}
+	s.CSRegisterMutex.Unlock()
 	go s.detectHeartBeat(csName, channel)
 	return NewCSRegisterResp(OK), nil
 }

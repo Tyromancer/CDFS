@@ -46,8 +46,12 @@ def do_append(ms_addr: str, filename: str, op_size: int) -> float:
     return end - start
 
 
-def do_read(ms_addr: str, op_size: int) -> float:
-    pass
+def do_read(ms_addr: str, filename: str, op_size: int, target_path: str) -> float:
+    start = timer()
+    cmd = f'./client -ms={ms_addr} -ops=read -filename={filename} -size={op_size * 1024 * 1024} -offset=0 -target={target_path}'
+    run_command(cmd)
+    end = timer()
+    return end-start
 
 def do_create(ms_addr: str, filename: str):
     cmd = f'./client -ms={ms_addr} -ops=create -filename={filename}'
@@ -91,20 +95,22 @@ def cleanup(config: Config, path: str):
         except FileNotFoundError as e:
             logging.warning(e)
         
-        
+    remove_all('client_output')
     logging.info('killed master server and chunk servers')
     
     
 def client_worker(ms_addr: str, filename: str, operation: str, operation_size: int, op_iter: int, q: queue.Queue):
     print(f'starting client with operation {operation}')
     data_points = []
-    for _ in range(op_iter):
+    
+    for i in range(op_iter):
         if operation.lower().strip() == 'append':
             rtt = do_append(ms_addr, filename, operation_size)
-            print(f'rtt is {rtt}')
+            # print(f'rtt is {rtt}')
             data_points.append(rtt)
         elif operation.lower().strip() == 'read':
-            pass
+            rtt = do_read(ms_addr,filename, operation_size,f'./client_output/output_{filename}_{i}.txt')
+            data_points.append(rtt)            
 
     q.put(data_points)
 
@@ -142,37 +148,40 @@ if __name__ == '__main__':
     for i in range(num_client):
         do_create(ms_addr, f'{filename}{i+1}')
     time.sleep(1)
-    for i in range(num_client):
-        t = threading.Thread(target=client_worker, name=f'thread{i}', args=[ms_addr, f'{filename}{i+1}', operation, operation_size, op_iter, q])
-        threads.append(t)
-        t.start()
-    
+    start_total = None
+    end_total = None
+    if operation.lower().strip() == 'append':
+        for i in range(num_client):
+            t = threading.Thread(target=client_worker, name=f'thread{i}', args=[ms_addr, f'{filename}{i+1}', operation, operation_size, op_iter, q])
+            threads.append(t)
+            t.start()
+        
+        
+    elif operation.lower().strip() == 'read':
+        for i in range(num_client):
+            do_append(ms_addr,f'{filename}{i+1}',operation_size)
+        
+        start_total = timer()
+        for i in range(num_client):
+            t = threading.Thread(target=client_worker,name=f'thread{i}', args=[ms_addr, f'{filename}{i+1}', operation, operation_size, op_iter, q])
+            threads.append(t)
+            t.start()
+
     for i in range(len(threads)):
         t = threads[i]
         t.join()
         pts = q.get()
-        print(f'pts is {pts}')
+        #print(f'pts is {pts}')
         data_points.append(pts)
-    # with concurrent.futures.ThreadPoolExecutor() as executor:
-    #     futures = [executor.submit(client_worker, ms_addr, filename, operation, operation_size // num_client, op_iter) for _ in range(num_client)]
-    
-    # data_points = [f.result() for f in futures]
+    end_total = timer()
+    total_time = end_total - start_total 
+
     data_points = list(chain(*data_points))
-    # if operation.lower().strip() == 'append':
-    #     do_create(ms_addr, filename)
-    #     time.sleep(1)
-    #     for _ in range(op_iter):
-    #         rtt = do_append(ms_addr, filename, operation_size)
-    #         data_points.append(rtt)
-    #         pass
-    #     pass
-    # elif operation.lower().strip() == 'read':
-    #     pass
 
 
     avg = statistics.mean(data_points)
     med = statistics.median(data_points)
     stddev = statistics.stdev(data_points)
-    print(f'result: avg={avg}, med={med}, stdev={stddev}')    
+    print(f'result: avg={avg}, med={med}, stdev={stddev}, total time = {total_time}')    
     
     cleanup(config, path)
