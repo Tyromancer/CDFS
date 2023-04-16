@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
 	"log"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/go-redis/redis/v8"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -163,32 +164,33 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 	timeout := 500 * time.Millisecond
 	for {
 		select {
-		case heartBeatReq := <-heartbeat:
+		case <-heartbeat:
 			chanStruct := s.HeartBeatMap[chunkServerName]
 			if chanStruct.isDead {
 				chanStruct.isDead = false
-			} else {
-				//TODO: do not need to update handletoMete map, and ChunkServerLoad?
-				chunkHandles := heartBeatReq.ChunkHandle
-				used := heartBeatReq.Used
-				load := 0
-				chunkServerName := heartBeatReq.Name
-				for i, each := range chunkHandles {
-					if _, ok := s.HandleToMeta[each]; !ok {
-						continue
-					}
-					if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
-						if s.HandleToMeta[each].Used != uint(used[i]) {
-							s.HandleToMeta[each].Used = uint(used[i])
-							s.PersistMetaData(s.HandleToMeta[each])
-						}
-					}
-					load += int(used[i])
-				}
-				s.HBMutex.Lock()
-				s.ChunkServerLoad[chunkServerName] = uint(load)
-				s.HBMutex.Unlock()
 			}
+			// else {
+			// 	//TODO: do not need to update handletoMete map, and ChunkServerLoad?
+			// 	chunkHandles := heartBeatReq.ChunkHandle
+			// 	used := heartBeatReq.Used
+			// 	load := 0
+			// 	chunkServerName := heartBeatReq.Name
+			// 	for i, each := range chunkHandles {
+			// 		if _, ok := s.HandleToMeta[each]; !ok {
+			// 			continue
+			// 		}
+			// 		if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
+			// 			if s.HandleToMeta[each].Used != uint(used[i]) {
+			// 				s.HandleToMeta[each].Used = uint(used[i])
+			// 				s.PersistMetaData(s.HandleToMeta[each])
+			// 			}
+			// 		}
+			// 		load += int(used[i])
+			// 	}
+			// 	s.HBMutex.Lock()
+			// 	s.ChunkServerLoad[chunkServerName] = uint(load)
+			// 	s.HBMutex.Unlock()
+			// }
 		case <-time.After(timeout):
 			//... no response
 			// chunk server is dead
