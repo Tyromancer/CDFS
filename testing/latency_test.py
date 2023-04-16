@@ -113,12 +113,23 @@ def client_worker(ms_addr: str, filename: str, operation: str, operation_size: i
             data_points.append(rtt)            
 
     q.put(data_points)
+    
+def get_size(start_path='.'):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(start_path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # skip if it is symbolic link
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+
+    return total_size
 
 if __name__ == '__main__':
     logging.basicConfig()
     parser = argparse.ArgumentParser(description='CDFS latency test')
     parser.add_argument('--ms', type=str, help='addr of master server')
-    parser.add_argument('--op', type=str, choices=['append', 'read'], help='mode of operation (append or read)')
+    parser.add_argument('--op', type=str, choices=['append', 'read', 'lb'], help='mode of operation (append, read, lb)')
     parser.add_argument('--size', type=int, help='append or read size in MB')
     parser.add_argument('--iter', type=int, help='#iterations')
     parser.add_argument('--redis-port', type=int)
@@ -150,9 +161,10 @@ if __name__ == '__main__':
     time.sleep(1)
     start_total = None
     end_total = None
-    if operation.lower().strip() == 'append':
+    if operation.lower().strip() == 'append' or operation.lower().strip() == 'lb':
+        start_total = timer()
         for i in range(num_client):
-            t = threading.Thread(target=client_worker, name=f'thread{i}', args=[ms_addr, f'{filename}{i+1}', operation, operation_size, op_iter, q])
+            t = threading.Thread(target=client_worker, name=f'thread{i}', args=[ms_addr, f'{filename}{i+1}', 'append', operation_size, op_iter, q])
             threads.append(t)
             t.start()
         
@@ -182,6 +194,22 @@ if __name__ == '__main__':
     avg = statistics.mean(data_points)
     med = statistics.median(data_points)
     stddev = statistics.stdev(data_points)
+    
+    # check load balance
+    if operation.lower().strip() == 'lb':
+        directory_sizes = []
+        for i in range(num_cs):
+            d_dir = os.path.join(os.getcwd(), f'CDFS{i+1}')
+            print(f'd_dir is {d_dir}')
+            if os.path.isdir(d_dir):
+                # d_size = sum(os.path.getsize(f) for f in os.listdir(d_dir) if os.path.isfile(f))
+                d_size = get_size(d_dir) / (1024 * 1024)
+                print(f'size of CDFS{i+1} is {d_size}')
+                directory_sizes.append(d_size)
+        print(f'lb result: stdev is {statistics.stdev(directory_sizes)}')
+
+    
+    
     print(f'result: avg={avg}, med={med}, stdev={stddev}, total time = {total_time}')    
     
     cleanup(config, path)
