@@ -175,4 +175,4 @@ if __name__ == '__main__':
     stddev = statistics.stdev(data_points)
     print(f'result: avg={avg}, med={med}, stdev={stddev}')    
     
-    # cleanup(config, path)
+    cleanup(config, path)

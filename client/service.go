@@ -194,7 +194,7 @@ func ReadFile(master string, filename string, offset uint32, size uint32) ([]byt
 		if len(backups) > 0 {
 			backup = backups[0]
 		}
-		if s != e {
+		if s <= e {
 			go readChunkData(chunkCtx, count, primary, backup, handle, s, e, dataChan)
 			count += 1
 		}
@@ -282,7 +282,7 @@ func readChunkData(ctx context.Context, index int, primaryIp string, backupIp st
 		return
 	}
 	// TODO: ask chunk to remove token
-	req := pb.ReadReq{ChunkHandle: handle, Token: "#USELESS", Start: start, End: end}
+	req := pb.ReadReq{ChunkHandle: handle, Token: "", Start: start, End: end}
 	csClient := pb.NewChunkServerClient(csConn)
 	res, err := csClient.Read(ctx, &req)
 	if err != nil {

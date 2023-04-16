@@ -168,6 +168,7 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 			if chanStruct.isDead {
 				chanStruct.isDead = false
 			} else {
+				//TODO: do not need to update handletoMete map, and ChunkServerLoad?
 				chunkHandles := heartBeatReq.ChunkHandle
 				used := heartBeatReq.Used
 				load := 0
@@ -560,12 +561,14 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 	// if the last Chunk can fit data to append
 	if fileSize <= ChunkSize-uint32(lastHandleMeta.Used) {
 		// TODISC: Do I update the Used and ChunkServerLoad now or later
+		log.Printf("lastHandleMeta used: %d, current append fileSize: %d", lastHandleMeta.Used, fileSize)
 		lastHandleMeta.Used += uint(fileSize)
 		s.PersistMetaData(lastHandleMeta)
 		s.ChunkServerLoad[lastHandleMeta.PrimaryChunkServer] += uint(fileSize)
 		for i := 0; i < len(lastHandleMeta.BackupAddress); i++ {
 			s.ChunkServerLoad[lastHandleMeta.BackupAddress[i]] += uint(fileSize)
 		}
+		log.Printf("Return to client: Primary IP: %+v ChunkHandle: %+v", []string{lastHandleMeta.PrimaryChunkServer}, []string{lastHandleMeta.ChunkHandle})
 		res := NewAppendFileResp(OK, []string{lastHandleMeta.PrimaryChunkServer}, []string{lastHandleMeta.ChunkHandle})
 		return res, nil
 	}
@@ -576,6 +579,7 @@ func (s *MasterServer) AppendFile(ctx context.Context, appendFileReq *pb.AppendF
 
 	// if the last Chunk Used is 0 (One case is that the last chunk is just created from Create(), so empty chunk)
 	if lastHandleMeta.Used == 0 {
+		log.Printf("In lastHandleMeta == 0, lastHandleMeta used: %d, current append fileSize: %d", lastHandleMeta.Used, fileSize)
 		lastHandleMeta.Used = uint(ChunkSize)
 		s.PersistMetaData(lastHandleMeta)
 
@@ -750,6 +754,7 @@ func (s *MasterServer) AppendResult(ctx context.Context, appendResultReq *pb.App
 
 	// if append fail, modify chunkMeta Used & chunkserver load
 	if statusCode != OK {
+		log.Printf("Receive append result error at chunk: %s with error: %s", chunkHandle, appendResultReq.GetStatus().GetErrorMessage())
 		chunkMetaData, ok := s.HandleToMeta[chunkHandle]
 		if !ok {
 			log.Printf("chunk handle is not stored in memory")
