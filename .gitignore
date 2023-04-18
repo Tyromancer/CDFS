@@ -2,3 +2,6 @@
 .vscode
 .DS_Store
 .zip
+main
+testing/client
+*.txt

@@ -22,13 +22,18 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MasterClient interface {
+	// Client <-> Master
+	// First message client send to master
+	GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error)
 	GetLocation(ctx context.Context, in *GetLocationReq, opts ...grpc.CallOption) (*GetLocationResp, error)
+	// rpc Write(fileName, chunkIndex) returns (WriteResp) {}
 	AppendFile(ctx context.Context, in *AppendFileReq, opts ...grpc.CallOption) (*AppendFileResp, error)
 	Delete(ctx context.Context, in *DeleteReq, opts ...grpc.CallOption) (*DeleteStatus, error)
 	Create(ctx context.Context, in *CreateReq, opts ...grpc.CallOption) (*CreateResp, error)
 	// chunk server <-> Master
 	HeartBeat(ctx context.Context, in *HeartBeatPayload, opts ...grpc.CallOption) (*HeartBeatResp, error)
-	GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error)
+	CSRegister(ctx context.Context, in *CSRegisterReq, opts ...grpc.CallOption) (*CSRegisterResp, error)
+	AppendResult(ctx context.Context, in *AppendResultReq, opts ...grpc.CallOption) (*AppendResultResp, error)
 }
 
 type masterClient struct {
@@ -37,6 +42,15 @@ type masterClient struct {
 
 func NewMasterClient(cc grpc.ClientConnInterface) MasterClient {
 	return &masterClient{cc}
+}
+
+func (c *masterClient) GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error) {
+	out := new(GetTokenResp)
+	err := c.cc.Invoke(ctx, "/pb.Master/GetToken", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *masterClient) GetLocation(ctx context.Context, in *GetLocationReq, opts ...grpc.CallOption) (*GetLocationResp, error) {
@@ -84,9 +98,18 @@ func (c *masterClient) HeartBeat(ctx context.Context, in *HeartBeatPayload, opts
 	return out, nil
 }
 
-func (c *masterClient) GetToken(ctx context.Context, in *GetTokenReq, opts ...grpc.CallOption) (*GetTokenResp, error) {
-	out := new(GetTokenResp)
-	err := c.cc.Invoke(ctx, "/pb.Master/GetToken", in, out, opts...)
+func (c *masterClient) CSRegister(ctx context.Context, in *CSRegisterReq, opts ...grpc.CallOption) (*CSRegisterResp, error) {
+	out := new(CSRegisterResp)
+	err := c.cc.Invoke(ctx, "/pb.Master/CSRegister", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *masterClient) AppendResult(ctx context.Context, in *AppendResultReq, opts ...grpc.CallOption) (*AppendResultResp, error) {
+	out := new(AppendResultResp)
+	err := c.cc.Invoke(ctx, "/pb.Master/AppendResult", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -97,13 +120,18 @@ func (c *masterClient) GetToken(ctx context.Context, in *GetTokenReq, opts ...gr
 // All implementations must embed UnimplementedMasterServer
 // for forward compatibility
 type MasterServer interface {
+	// Client <-> Master
+	// First message client send to master
+	GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error)
 	GetLocation(context.Context, *GetLocationReq) (*GetLocationResp, error)
+	// rpc Write(fileName, chunkIndex) returns (WriteResp) {}
 	AppendFile(context.Context, *AppendFileReq) (*AppendFileResp, error)
 	Delete(context.Context, *DeleteReq) (*DeleteStatus, error)
 	Create(context.Context, *CreateReq) (*CreateResp, error)
 	// chunk server <-> Master
 	HeartBeat(context.Context, *HeartBeatPayload) (*HeartBeatResp, error)
-	GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error)
+	CSRegister(context.Context, *CSRegisterReq) (*CSRegisterResp, error)
+	AppendResult(context.Context, *AppendResultReq) (*AppendResultResp, error)
 	mustEmbedUnimplementedMasterServer()
 }
 
@@ -111,6 +139,9 @@ type MasterServer interface {
 type UnimplementedMasterServer struct {
 }
 
+func (UnimplementedMasterServer) GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetToken not implemented")
+}
 func (UnimplementedMasterServer) GetLocation(context.Context, *GetLocationReq) (*GetLocationResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetLocation not implemented")
 }
@@ -126,8 +157,11 @@ func (UnimplementedMasterServer) Create(context.Context, *CreateReq) (*CreateRes
 func (UnimplementedMasterServer) HeartBeat(context.Context, *HeartBeatPayload) (*HeartBeatResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HeartBeat not implemented")
 }
-func (UnimplementedMasterServer) GetToken(context.Context, *GetTokenReq) (*GetTokenResp, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetToken not implemented")
+func (UnimplementedMasterServer) CSRegister(context.Context, *CSRegisterReq) (*CSRegisterResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CSRegister not implemented")
+}
+func (UnimplementedMasterServer) AppendResult(context.Context, *AppendResultReq) (*AppendResultResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AppendResult not implemented")
 }
 func (UnimplementedMasterServer) mustEmbedUnimplementedMasterServer() {}
 
@@ -140,6 +174,24 @@ type UnsafeMasterServer interface {
 
 func RegisterMasterServer(s grpc.ServiceRegistrar, srv MasterServer) {
 	s.RegisterService(&Master_ServiceDesc, srv)
+}
+
+func _Master_GetToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTokenReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MasterServer).GetToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.Master/GetToken",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MasterServer).GetToken(ctx, req.(*GetTokenReq))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Master_GetLocation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -232,20 +284,38 @@ func _Master_HeartBeat_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Master_GetToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTokenReq)
+func _Master_CSRegister_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CSRegisterReq)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MasterServer).GetToken(ctx, in)
+		return srv.(MasterServer).CSRegister(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/pb.Master/GetToken",
+		FullMethod: "/pb.Master/CSRegister",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MasterServer).GetToken(ctx, req.(*GetTokenReq))
+		return srv.(MasterServer).CSRegister(ctx, req.(*CSRegisterReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Master_AppendResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendResultReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MasterServer).AppendResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.Master/AppendResult",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MasterServer).AppendResult(ctx, req.(*AppendResultReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -257,6 +327,10 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "pb.Master",
 	HandlerType: (*MasterServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetToken",
+			Handler:    _Master_GetToken_Handler,
+		},
 		{
 			MethodName: "GetLocation",
 			Handler:    _Master_GetLocation_Handler,
@@ -278,8 +352,12 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Master_HeartBeat_Handler,
 		},
 		{
-			MethodName: "GetToken",
-			Handler:    _Master_GetToken_Handler,
+			MethodName: "CSRegister",
+			Handler:    _Master_CSRegister_Handler,
+		},
+		{
+			MethodName: "AppendResult",
+			Handler:    _Master_AppendResult_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -292,11 +370,19 @@ var Master_ServiceDesc = grpc.ServiceDesc{
 type ChunkServerClient interface {
 	// Master -> ChunkServer
 	CreateChunk(ctx context.Context, in *CreateChunkReq, opts ...grpc.CallOption) (*CreateChunkResp, error)
+	DeleteChunk(ctx context.Context, in *DeleteChunkReq, opts ...grpc.CallOption) (*DeleteChunkResp, error)
+	// Use Read Version to check who is new primary
+	ChangeToPrimary(ctx context.Context, in *ChangeToPrimaryReq, opts ...grpc.CallOption) (*ChangeToPrimaryResp, error)
+	AssignNewPrimary(ctx context.Context, in *AssignNewPrimaryReq, opts ...grpc.CallOption) (*AssignNewPrimaryResp, error)
+	UpdateBackup(ctx context.Context, in *UpdateBackupReq, opts ...grpc.CallOption) (*UpdateBackupResp, error)
 	// Client -> ChunkServer
+	ReadVersion(ctx context.Context, in *ReadVersionReq, opts ...grpc.CallOption) (*ReadVersionResp, error)
 	Read(ctx context.Context, in *ReadReq, opts ...grpc.CallOption) (*ReadResp, error)
 	AppendData(ctx context.Context, in *AppendDataReq, opts ...grpc.CallOption) (*AppendDataResp, error)
 	// ChunkServer -> ChunkServer
+	ForwardCreate(ctx context.Context, in *ForwardCreateReq, opts ...grpc.CallOption) (*ForwardCreateResp, error)
 	Replicate(ctx context.Context, in *ReplicateReq, opts ...grpc.CallOption) (*ReplicateResp, error)
+	GetVersion(ctx context.Context, in *GetVersionReq, opts ...grpc.CallOption) (*GetVersionResp, error)
 }
 
 type chunkServerClient struct {
@@ -310,6 +396,51 @@ func NewChunkServerClient(cc grpc.ClientConnInterface) ChunkServerClient {
 func (c *chunkServerClient) CreateChunk(ctx context.Context, in *CreateChunkReq, opts ...grpc.CallOption) (*CreateChunkResp, error) {
 	out := new(CreateChunkResp)
 	err := c.cc.Invoke(ctx, "/pb.ChunkServer/CreateChunk", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chunkServerClient) DeleteChunk(ctx context.Context, in *DeleteChunkReq, opts ...grpc.CallOption) (*DeleteChunkResp, error) {
+	out := new(DeleteChunkResp)
+	err := c.cc.Invoke(ctx, "/pb.ChunkServer/DeleteChunk", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chunkServerClient) ChangeToPrimary(ctx context.Context, in *ChangeToPrimaryReq, opts ...grpc.CallOption) (*ChangeToPrimaryResp, error) {
+	out := new(ChangeToPrimaryResp)
+	err := c.cc.Invoke(ctx, "/pb.ChunkServer/ChangeToPrimary", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chunkServerClient) AssignNewPrimary(ctx context.Context, in *AssignNewPrimaryReq, opts ...grpc.CallOption) (*AssignNewPrimaryResp, error) {
+	out := new(AssignNewPrimaryResp)
+	err := c.cc.Invoke(ctx, "/pb.ChunkServer/AssignNewPrimary", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chunkServerClient) UpdateBackup(ctx context.Context, in *UpdateBackupReq, opts ...grpc.CallOption) (*UpdateBackupResp, error) {
+	out := new(UpdateBackupResp)
+	err := c.cc.Invoke(ctx, "/pb.ChunkServer/UpdateBackup", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chunkServerClient) ReadVersion(ctx context.Context, in *ReadVersionReq, opts ...grpc.CallOption) (*ReadVersionResp, error) {
+	out := new(ReadVersionResp)
+	err := c.cc.Invoke(ctx, "/pb.ChunkServer/ReadVersion", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -334,9 +465,27 @@ func (c *chunkServerClient) AppendData(ctx context.Context, in *AppendDataReq, o
 	return out, nil
 }
 
+func (c *chunkServerClient) ForwardCreate(ctx context.Context, in *ForwardCreateReq, opts ...grpc.CallOption) (*ForwardCreateResp, error) {
+	out := new(ForwardCreateResp)
+	err := c.cc.Invoke(ctx, "/pb.ChunkServer/ForwardCreate", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *chunkServerClient) Replicate(ctx context.Context, in *ReplicateReq, opts ...grpc.CallOption) (*ReplicateResp, error) {
 	out := new(ReplicateResp)
 	err := c.cc.Invoke(ctx, "/pb.ChunkServer/Replicate", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *chunkServerClient) GetVersion(ctx context.Context, in *GetVersionReq, opts ...grpc.CallOption) (*GetVersionResp, error) {
+	out := new(GetVersionResp)
+	err := c.cc.Invoke(ctx, "/pb.ChunkServer/GetVersion", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -349,11 +498,19 @@ func (c *chunkServerClient) Replicate(ctx context.Context, in *ReplicateReq, opt
 type ChunkServerServer interface {
 	// Master -> ChunkServer
 	CreateChunk(context.Context, *CreateChunkReq) (*CreateChunkResp, error)
+	DeleteChunk(context.Context, *DeleteChunkReq) (*DeleteChunkResp, error)
+	// Use Read Version to check who is new primary
+	ChangeToPrimary(context.Context, *ChangeToPrimaryReq) (*ChangeToPrimaryResp, error)
+	AssignNewPrimary(context.Context, *AssignNewPrimaryReq) (*AssignNewPrimaryResp, error)
+	UpdateBackup(context.Context, *UpdateBackupReq) (*UpdateBackupResp, error)
 	// Client -> ChunkServer
+	ReadVersion(context.Context, *ReadVersionReq) (*ReadVersionResp, error)
 	Read(context.Context, *ReadReq) (*ReadResp, error)
 	AppendData(context.Context, *AppendDataReq) (*AppendDataResp, error)
 	// ChunkServer -> ChunkServer
+	ForwardCreate(context.Context, *ForwardCreateReq) (*ForwardCreateResp, error)
 	Replicate(context.Context, *ReplicateReq) (*ReplicateResp, error)
+	GetVersion(context.Context, *GetVersionReq) (*GetVersionResp, error)
 	mustEmbedUnimplementedChunkServerServer()
 }
 
@@ -364,14 +521,35 @@ type UnimplementedChunkServerServer struct {
 func (UnimplementedChunkServerServer) CreateChunk(context.Context, *CreateChunkReq) (*CreateChunkResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateChunk not implemented")
 }
+func (UnimplementedChunkServerServer) DeleteChunk(context.Context, *DeleteChunkReq) (*DeleteChunkResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteChunk not implemented")
+}
+func (UnimplementedChunkServerServer) ChangeToPrimary(context.Context, *ChangeToPrimaryReq) (*ChangeToPrimaryResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ChangeToPrimary not implemented")
+}
+func (UnimplementedChunkServerServer) AssignNewPrimary(context.Context, *AssignNewPrimaryReq) (*AssignNewPrimaryResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AssignNewPrimary not implemented")
+}
+func (UnimplementedChunkServerServer) UpdateBackup(context.Context, *UpdateBackupReq) (*UpdateBackupResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateBackup not implemented")
+}
+func (UnimplementedChunkServerServer) ReadVersion(context.Context, *ReadVersionReq) (*ReadVersionResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadVersion not implemented")
+}
 func (UnimplementedChunkServerServer) Read(context.Context, *ReadReq) (*ReadResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Read not implemented")
 }
 func (UnimplementedChunkServerServer) AppendData(context.Context, *AppendDataReq) (*AppendDataResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AppendData not implemented")
 }
+func (UnimplementedChunkServerServer) ForwardCreate(context.Context, *ForwardCreateReq) (*ForwardCreateResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ForwardCreate not implemented")
+}
 func (UnimplementedChunkServerServer) Replicate(context.Context, *ReplicateReq) (*ReplicateResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Replicate not implemented")
+}
+func (UnimplementedChunkServerServer) GetVersion(context.Context, *GetVersionReq) (*GetVersionResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetVersion not implemented")
 }
 func (UnimplementedChunkServerServer) mustEmbedUnimplementedChunkServerServer() {}
 
@@ -400,6 +578,96 @@ func _ChunkServer_CreateChunk_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ChunkServerServer).CreateChunk(ctx, req.(*CreateChunkReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChunkServer_DeleteChunk_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteChunkReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).DeleteChunk(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.ChunkServer/DeleteChunk",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).DeleteChunk(ctx, req.(*DeleteChunkReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChunkServer_ChangeToPrimary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChangeToPrimaryReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).ChangeToPrimary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.ChunkServer/ChangeToPrimary",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).ChangeToPrimary(ctx, req.(*ChangeToPrimaryReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChunkServer_AssignNewPrimary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AssignNewPrimaryReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).AssignNewPrimary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.ChunkServer/AssignNewPrimary",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).AssignNewPrimary(ctx, req.(*AssignNewPrimaryReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChunkServer_UpdateBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateBackupReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).UpdateBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.ChunkServer/UpdateBackup",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).UpdateBackup(ctx, req.(*UpdateBackupReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ChunkServer_ReadVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadVersionReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).ReadVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.ChunkServer/ReadVersion",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).ReadVersion(ctx, req.(*ReadVersionReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -440,6 +708,24 @@ func _ChunkServer_AppendData_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChunkServer_ForwardCreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ForwardCreateReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).ForwardCreate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.ChunkServer/ForwardCreate",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).ForwardCreate(ctx, req.(*ForwardCreateReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ChunkServer_Replicate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReplicateReq)
 	if err := dec(in); err != nil {
@@ -458,6 +744,24 @@ func _ChunkServer_Replicate_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChunkServer_GetVersion_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetVersionReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChunkServerServer).GetVersion(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.ChunkServer/GetVersion",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChunkServerServer).GetVersion(ctx, req.(*GetVersionReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChunkServer_ServiceDesc is the grpc.ServiceDesc for ChunkServer service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -470,6 +774,26 @@ var ChunkServer_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ChunkServer_CreateChunk_Handler,
 		},
 		{
+			MethodName: "DeleteChunk",
+			Handler:    _ChunkServer_DeleteChunk_Handler,
+		},
+		{
+			MethodName: "ChangeToPrimary",
+			Handler:    _ChunkServer_ChangeToPrimary_Handler,
+		},
+		{
+			MethodName: "AssignNewPrimary",
+			Handler:    _ChunkServer_AssignNewPrimary_Handler,
+		},
+		{
+			MethodName: "UpdateBackup",
+			Handler:    _ChunkServer_UpdateBackup_Handler,
+		},
+		{
+			MethodName: "ReadVersion",
+			Handler:    _ChunkServer_ReadVersion_Handler,
+		},
+		{
 			MethodName: "Read",
 			Handler:    _ChunkServer_Read_Handler,
 		},
@@ -478,8 +802,16 @@ var ChunkServer_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ChunkServer_AppendData_Handler,
 		},
 		{
+			MethodName: "ForwardCreate",
+			Handler:    _ChunkServer_ForwardCreate_Handler,
+		},
+		{
 			MethodName: "Replicate",
 			Handler:    _ChunkServer_Replicate_Handler,
+		},
+		{
+			MethodName: "GetVersion",
+			Handler:    _ChunkServer_GetVersion_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

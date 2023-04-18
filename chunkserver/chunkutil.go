@@ -1,11 +1,17 @@
 package chunkserver
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/tyromancer/cdfs/pb"
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
+
+	"github.com/tyromancer/cdfs/pb"
+	"golang.org/x/exp/constraints"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -16,14 +22,27 @@ const (
 const (
 	OK int32 = iota
 	ERROR_NOT_PRIMARY
+	ERROR_NOT_SECONDARY
 	ERROR_READ_FAILED
 	ERROR_CHUNK_ALREADY_EXISTS
 	ERROR_CREATE_CHUNK_FAILED
 	ERROR_APPEND_FAILED
-
+	ERROR_REPLICATE_FAILED
 	// ERROR_APPEND_NOT_EXISTS represents the chunk to be appended does not exist on local filesystem
 	ERROR_APPEND_NOT_EXISTS
+	ERROR_REPLICATE_NOT_EXISTS
+	ERROR_SHOULD_NOT_HAPPEN
+	ERROR_CHUNK_NOT_EXISTS
+	ERROR_VERSIONS_DO_NOT_MATCH
 )
+
+var ClientOpts []grpc.DialOption = []grpc.DialOption{
+	grpc.WithDefaultCallOptions(
+		grpc.MaxCallRecvMsgSize(64*1024*1024+300),
+		grpc.MaxCallSendMsgSize(64*1024*1024+300),
+	),
+	grpc.WithInsecure(),
+}
 
 func ErrorCodeToString(e int32) string {
 	switch e {
@@ -31,17 +50,36 @@ func ErrorCodeToString(e int32) string {
 		return "OK"
 	case ERROR_NOT_PRIMARY:
 		return "Error: this chunk server is not primary for this chunk"
+	case ERROR_NOT_SECONDARY:
+		return "Error: this chunk server is not backup for this chunk"
 	case ERROR_READ_FAILED:
 		return "Error: failed to open local file for this chunk"
 	case ERROR_CHUNK_ALREADY_EXISTS:
 		return "Error: chunk already exists"
 	case ERROR_APPEND_FAILED:
 		return "Error: append to chunk failed"
+	case ERROR_REPLICATE_FAILED:
+		return "Error: replicate to chunk failed"
 	case ERROR_APPEND_NOT_EXISTS:
-		return "Error: append to chunk not exisis"
+		return "Error: append to chunk not exists"
+	case ERROR_REPLICATE_NOT_EXISTS:
+		return "Error: replicate chunk not exists"
+	case ERROR_SHOULD_NOT_HAPPEN:
+		return "Error: this should not have happened"
+	case ERROR_CHUNK_NOT_EXISTS:
+		return "Error: chunk does not exist on this server"
+	case ERROR_VERSIONS_DO_NOT_MATCH:
+		return "Error: chunk versions do not match"
+
 	default:
 		return fmt.Sprintf("%d", int(e))
 	}
+}
+
+type DebugInfo struct {
+	Addr       string
+	Func       string
+	StatusCode int32
 }
 
 type ChunkMetaData struct {
@@ -49,19 +87,26 @@ type ChunkMetaData struct {
 	ChunkLocation string
 
 	// role of current chunkserver for this chunk
-	Role uint
+	Role uint32
 
 	// IP address of primary chunk server for this chunk
 	PrimaryChunkServer string
 	PeerAddress        []string
 
 	// Already used size in bytes
-	Used uint
+	Used uint32
+
+	// Add version number
+	Version uint32
+
+	MetaDataLock sync.Mutex
+
+	GetVersionChannel chan string
 }
 
 type RespMetaData struct {
 	// client last seq
-	LastSeq uint32
+	LastID string
 
 	// last response to client append request
 	AppendResp *pb.AppendDataResp
@@ -70,11 +115,29 @@ type RespMetaData struct {
 	Err error
 }
 
-func LoadChunk(path string) ([]byte, error) {
-	fileContent, err := os.ReadFile(path)
-	return fileContent, err
+// LoadChunk reads a file at the specified path with an offset start and ends the read at end
+// if end equals to 0, LoadChunk reads and returns the whole data starting from start, otherwise
+// it reads and returns (end - start) bytes
+func LoadChunk(path string, used uint32, start uint32, end uint32) ([]byte, error) {
+	file, err := os.ReadFile(path)
+
+	if err != nil {
+		log.Printf("failed to read file: %v", err)
+		return nil, err
+	}
+
+	if end == 0 {
+		return file[start:], nil
+	}
+
+	if end > uint32(len(file)) {
+		return nil, errors.New("invalid read size")
+	}
+	return file[start:end], nil
 }
 
+// CreateFile creates an empty file on disk and creates all intermediate
+// directories in path
 func CreateFile(path string) error {
 
 	err := os.MkdirAll(filepath.Dir(path), 0700)
@@ -87,7 +150,35 @@ func CreateFile(path string) error {
 	return err
 }
 
-func WriteFile(path string, content []byte) error {
+// OverWriteChunk overwrites existing file on disk with content
+func OverWriteChunk(chunkMeta *ChunkMetaData, content []byte) error {
+	path := chunkMeta.ChunkLocation
+	f, err := os.OpenFile(path, os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			log.Println("failed to close file: ", err)
+		}
+	}(f)
+
+	_, err = f.Write(content)
+	if err != nil {
+		return err
+	}
+	chunkMeta.Used = uint32(len(content))
+	return nil
+}
+
+// WriteFile opens chunk file in append mode and appends content to the file
+func WriteFile(chunkMeta *ChunkMetaData, content []byte) error {
+	path := chunkMeta.ChunkLocation
+	chunkMeta.MetaDataLock.Lock()
+	defer chunkMeta.MetaDataLock.Unlock()
+
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -101,18 +192,141 @@ func WriteFile(path string, content []byte) error {
 	}(f)
 
 	_, err = f.Write(content)
-	return err
+	if err != nil {
+		return err
+	}
+	chunkMeta.Version++
+	chunkMeta.Used += uint32(len(content))
+	return nil
+}
+
+func NewStatus(errorCode int32) *pb.Status {
+	return &pb.Status{
+		StatusCode:   errorCode,
+		ErrorMessage: ErrorCodeToString(errorCode),
+	}
 }
 
 // NewReadResp returns a pointer to pb.ReadResp that represents the result of a read with pb.Status
-func NewReadResp(seqNum uint32, fileData []byte, errorCode int32) *pb.ReadResp {
-	return &pb.ReadResp{SeqNum: seqNum, FileData: fileData, Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+func NewReadResp(fileData []byte, errorCode int32, version *uint32) *pb.ReadResp {
+	return &pb.ReadResp{FileData: fileData, Status: NewStatus(errorCode), Version: version}
 }
 
 func NewCreateChunkResp(errorCode int32) *pb.CreateChunkResp {
-	return &pb.CreateChunkResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+	return &pb.CreateChunkResp{Status: NewStatus(errorCode)}
+}
+
+func NewForwardCreateResp(errorCode int32) *pb.ForwardCreateResp {
+	return &pb.ForwardCreateResp{Status: NewStatus(errorCode)}
 }
 
 func NewAppendDataResp(errorCode int32) *pb.AppendDataResp {
-	return &pb.AppendDataResp{Status: &pb.Status{StatusCode: errorCode, ErrorMessage: ErrorCodeToString(errorCode)}}
+	return &pb.AppendDataResp{Status: NewStatus(errorCode)}
+}
+
+func NewReplicateResp(errorCode int32, uuid string) *pb.ReplicateResp {
+	return &pb.ReplicateResp{Status: NewStatus(errorCode), Uuid: uuid}
+}
+
+func NewDeleteChunkResp(errorCode int32) *pb.DeleteChunkResp {
+	return &pb.DeleteChunkResp{Status: NewStatus(errorCode)}
+}
+
+func NewReadVersionResp(errorCode int32, version *uint32) *pb.ReadVersionResp {
+	return &pb.ReadVersionResp{
+		Status:  NewStatus(errorCode),
+		Version: version,
+	}
+}
+
+func NewGetVersionResp(errorCode int32, version *uint32, fileData []byte) *pb.GetVersionResp {
+	return &pb.GetVersionResp{
+		Status:    NewStatus(errorCode),
+		Version:   version,
+		ChunkData: fileData,
+	}
+}
+
+// NewPeerConn establishes and returns a grpc.ClientConn to the specified address
+func NewPeerConn(address string) (*grpc.ClientConn, error) {
+	var conn *grpc.ClientConn
+	conn, err := grpc.Dial(address, ClientOpts...)
+	return conn, err
+}
+
+// ForwardCreateReq establishes a grpc.ClientConn with peer and forwards the pb.CreateChunkReq
+func ForwardCreateReq(serverName string, req *pb.CreateChunkReq, peer string) error {
+	peerConn, err := NewPeerConn(peer)
+
+	if err != nil {
+		return err
+	}
+
+	defer peerConn.Close()
+
+	peerClient := pb.NewChunkServerClient(peerConn)
+	forwardReq := &pb.ForwardCreateReq{
+		ChunkHandle: req.ChunkHandle,
+		Primary:     serverName,
+	}
+
+	res, err := peerClient.ForwardCreate(context.Background(), forwardReq)
+
+	// NOTE: if err != nil, will res be nil?
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		return errors.New(res.GetStatus().GetErrorMessage())
+	}
+
+	return nil
+}
+
+func NewReplicateReq(req *pb.ReplicateReq, peer string) error {
+	peerConn, err := NewPeerConn(peer)
+
+	if err != nil {
+		return err
+	}
+	defer peerConn.Close()
+
+	peerClient := pb.NewChunkServerClient(peerConn)
+	res, err := peerClient.Replicate(context.Background(), req)
+	if err != nil || res.GetStatus().GetStatusCode() != OK {
+		return errors.New(res.GetStatus().GetErrorMessage())
+	}
+	return nil
+}
+
+func ReplicateRespToAppendResp(replicateResp *pb.ReplicateResp) *pb.AppendDataResp {
+	return &pb.AppendDataResp{Status: replicateResp.GetStatus()}
+}
+
+func IsClose[T any](ch <-chan T) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+	}
+	return false
+}
+
+type Number interface {
+	constraints.Integer | constraints.Float
+}
+
+func Sum[T Number](slice []T) T {
+	if len(slice) == 0 {
+		return 0
+	}
+	result := slice[0]
+	if len(slice) == 1 {
+		return result
+	}
+	for _, v := range slice[1:] {
+		result += v
+	}
+	return result
+}
+
+func GetAddr(host string, port uint32) string {
+	return fmt.Sprintf("%s:%d", host, port)
 }
