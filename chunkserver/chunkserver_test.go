@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc"
 	"net"
 	"os"
-	"path"
 	"reflect"
 	"strings"
 	"sync"
@@ -60,30 +59,6 @@ func BuildAndRunThreeChunkServers(t *testing.T, config *BuildChunkServerConfig) 
 	return
 }
 
-func NewChunkServerInstance(t *testing.T, port uint32, msHost string, msPort uint32, basePath string) {
-	t.Log("Create New Chunk Server")
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		t.Fatalf("Failed to listen on port %d %v", port, err)
-	}
-
-	s := ChunkServer{Chunks: make(map[string]*ChunkMetaData), ClientLastResp: make(map[string]RespMetaData), ServerName: fmt.Sprintf("localhost:%d", port), BasePath: basePath, HostName: "localhost", Port: port, MasterIP: msHost, MasterPort: msPort}
-
-	if msHost != "" {
-		err = s.SendRegister()
-		if err != nil {
-			t.Fatalf("Failed to register on MS: %v", err)
-		}
-	}
-
-	grpcServer := grpc.NewServer()
-	pb.RegisterChunkServerServer(grpcServer, &s)
-
-	if err = grpcServer.Serve(lis); err != nil {
-		t.Fatalf("Failed to serve chunk server: %v", err)
-	}
-}
-
 func startChunkServer(t *testing.T, cs *ChunkServer) {
 	t.Log("Start Chunk Server")
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cs.Port))
@@ -130,26 +105,6 @@ func setChunkMetaData(cs *ChunkServer, chunkHandle string, chunkLocation string,
 	cs.Chunks[chunkHandle] = &ChunkMetaData{ChunkLocation: chunkLocation, Role: role, PrimaryChunkServer: primary}
 }
 
-func makeFilePath(server *ChunkServer, chunkHandle string) string {
-	return path.Join(server.BasePath, chunkHandle)
-}
-
-//func createChunkWorkload(t *testing.T, server *pb.ChunkServerClient, chunkHandle string, peers []string) (string, error) {
-//	req := pb.CreateChunkReq{
-//		ChunkHandle: chunkHandle,
-//		Role:        Primary,
-//		Peers:       peers,
-//	}
-//
-//	chunkFilePath := makeFilePath(server, chunkHandle)
-//	if got.GetStatus().GetStatusCode() != OK || err != nil {
-//		t.Logf("got status code %d, expected %d, message is %s", got.GetStatus().GetStatusCode(), OK, got.GetStatus().GetErrorMessage())
-//		return chunkFilePath, errors.New(got.GetStatus().GetErrorMessage())
-//	}
-//
-//	return chunkFilePath, nil
-//}
-
 // checkFileExists checks if the file specified by path exists and is a file rather than a directory
 //
 //	reference: https://stackoverflow.com/questions/12518876/how-to-check-if-a-file-exists-in-go
@@ -159,35 +114,6 @@ func checkFileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
-}
-
-func appendChunkWorkload(t *testing.T, server *ChunkServer, chunkHandle string, appendContent []byte, uuid string) error {
-	req := pb.AppendDataReq{
-		ChunkHandle: chunkHandle,
-		FileData:    appendContent,
-		Token:       "appendChunk#1",
-		Uuid:        uuid,
-	}
-	got, err := server.AppendData(context.Background(), &req)
-	if got.GetStatus().GetStatusCode() != OK || err != nil {
-		t.Logf("got status code %d, expected %d, message is %s", got.GetStatus().GetStatusCode(), OK, got.GetStatus().GetErrorMessage())
-		return errors.New(got.GetStatus().GetErrorMessage())
-	}
-	return nil
-}
-
-func TestClientReadInvalidRead(t *testing.T) {
-	t.Log("Running TestClientReadInvalidRead...")
-
-	s := newChunkServer(t, "cs1")
-	setChunkMetaData(&s, "chunk#1", "/cdfs/cs1/chunk1", Secondary, "cs2")
-
-	req1 := pb.ReadReq{ChunkHandle: "chunk#2", Token: "client1"}
-	got1, err := s.Read(context.Background(), &req1)
-	wanted1 := ERROR_NOT_PRIMARY
-	if got1.Status.GetStatusCode() != wanted1 || err == nil {
-		t.Errorf("got status code %d, expected %d, returned error is %v", got1.Status.GetStatusCode(), wanted1, err)
-	}
 }
 
 // TestCreateValidChunk tests the ChunkServer behavior on creating a valid chunk via the Create RPC

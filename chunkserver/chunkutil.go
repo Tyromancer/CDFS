@@ -136,6 +136,8 @@ func LoadChunk(path string, used uint32, start uint32, end uint32) ([]byte, erro
 	return file[start:end], nil
 }
 
+// CreateFile creates an empty file on disk and creates all intermediate
+// directories in path
 func CreateFile(path string) error {
 
 	err := os.MkdirAll(filepath.Dir(path), 0700)
@@ -148,6 +150,7 @@ func CreateFile(path string) error {
 	return err
 }
 
+// OverWriteChunk overwrites existing file on disk with content
 func OverWriteChunk(chunkMeta *ChunkMetaData, content []byte) error {
 	path := chunkMeta.ChunkLocation
 	f, err := os.OpenFile(path, os.O_WRONLY, 0600)
@@ -170,6 +173,7 @@ func OverWriteChunk(chunkMeta *ChunkMetaData, content []byte) error {
 	return nil
 }
 
+// WriteFile opens chunk file in append mode and appends content to the file
 func WriteFile(chunkMeta *ChunkMetaData, content []byte) error {
 	path := chunkMeta.ChunkLocation
 	chunkMeta.MetaDataLock.Lock()

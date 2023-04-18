@@ -33,8 +33,7 @@ def remove_all(folder: str):
 def run_command(cmd: str):
     process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, shell=False)
     process.wait()
-    # output, error = process.communicate()
-    
+
 def start_service(cmd: str) -> int:
     return subprocess.Popen(cmd.split()).pid
 

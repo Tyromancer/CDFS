@@ -94,18 +94,6 @@ func (s *MasterServer) PersistState(filename string, operation int) {
 	}
 
 	log.Printf("DB operation success for %s", filename)
-	//for key, val := range s.Files {
-	//	serializedSlice, err := json.Marshal(val)
-	//	if err != nil {
-	//		log.Printf("failed to marshal value with key %s", key)
-	//		return
-	//	}
-	//	err = s.DB.HSet(context.Background(), "files", key, serializedSlice).Err()
-	//	if err != nil {
-	//		log.Printf("failed to set value with key %s", key)
-	//		return
-	//	}
-	//}
 }
 
 func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeatPayload) (*pb.HeartBeatResp, error) {
@@ -119,10 +107,9 @@ func (s *MasterServer) HeartBeat(ctx context.Context, heartBeatReq *pb.HeartBeat
 			isDead:  false,
 			channel: channel,
 		}
-		// TODO: Need to send message to channel or not?
 		go s.detectHeartBeat(chunkServerName, channel)
-		// TODO: set entry in CSToHandle
-		// TODO: set ChunkServerLoad
+		// set entry in CSToHandle
+		// set ChunkServerLoad
 		chunkHandles := heartBeatReq.GetChunkHandle()
 		used := heartBeatReq.GetUsed()
 		newCSValue := []*HandleMetaData{}
@@ -171,32 +158,9 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 			if chanStruct.isDead {
 				chanStruct.isDead = false
 			}
-			// else {
-			// 	//TODO: do not need to update handletoMete map, and ChunkServerLoad?
-			// 	chunkHandles := heartBeatReq.ChunkHandle
-			// 	used := heartBeatReq.Used
-			// 	load := 0
-			// 	chunkServerName := heartBeatReq.Name
-			// 	for i, each := range chunkHandles {
-			// 		if _, ok := s.HandleToMeta[each]; !ok {
-			// 			continue
-			// 		}
-			// 		if s.HandleToMeta[each].PrimaryChunkServer == chunkServerName {
-			// 			if s.HandleToMeta[each].Used != uint(used[i]) {
-			// 				s.HandleToMeta[each].Used = uint(used[i])
-			// 				s.PersistMetaData(s.HandleToMeta[each])
-			// 			}
-			// 		}
-			// 		load += int(used[i])
-			// 	}
-			// 	s.HBMutex.Lock()
-			// 	s.ChunkServerLoad[chunkServerName] = uint(load)
-			// 	s.HBMutex.Unlock()
-			// }
 		case <-time.After(timeout):
 			//... no response
 			// chunk server is dead
-			//chanStruct := s.HeartBeatMap[chunkServerName]
 			if !s.HeartBeatMap[chunkServerName].isDead {
 				s.handleChunkServerFailure(chunkServerName)
 				s.HeartBeatMap[chunkServerName].isDead = true
@@ -207,7 +171,6 @@ func (s *MasterServer) detectHeartBeat(chunkServerName string, heartbeat chan Ch
 
 func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
 	chunkHandles := s.CSToHandle[chunkServerName]
-	//TODO: remove ChunkServer KV in CSToHandle map
 	for _, each := range chunkHandles {
 		// if role primary
 		chunkHandle := each.ChunkHandle
@@ -219,7 +182,7 @@ func (s *MasterServer) handleChunkServerFailure(chunkServerName string) {
 		}
 	}
 
-	// TODO: only clear value pair from CSToHandle, delete key from used map
+	// only clear value pair from CSToHandle, delete key from used map
 	delete(s.CSToHandle, chunkServerName)
 	delete(s.ChunkServerLoad, chunkServerName)
 }
@@ -799,7 +762,6 @@ func (s *MasterServer) GenerateHandleToMetaMap() error {
 }
 
 func (s *MasterServer) AppendWorker(fileName string, fileSize uint32, primary string, peers []string, chunkHandle string, used uint, result chan int32, wg *sync.WaitGroup) {
-	//lowestThree := lowestThreeChunkServer(s.ChunkServerLoad)
 	defer func() {
 		wg.Done()
 		log.Printf("wg Done by 1")
@@ -828,7 +790,6 @@ func (s *MasterServer) AppendWorker(fileName string, fileSize uint32, primary st
 
 		result <- ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND
 		return
-		//return NewAppendFileResp(ERROR_FAIL_TO_CREATE_CHUNK_WHEN_APPEND, []string{}, []string{}), nil
 	}
 	log.Printf("chunk %s: create chunk success", chunkHandle)
 
